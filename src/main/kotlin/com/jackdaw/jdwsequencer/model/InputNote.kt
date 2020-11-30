@@ -1,6 +1,9 @@
 package com.jackdaw.jdwsequencer.model
 
-data class Note(
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class InputNote(
         val tone: Double,
         val reserved_time: Double,
         val sustain_time: Double,

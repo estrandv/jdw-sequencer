@@ -1,6 +1,9 @@
 package com.jackdaw.jdwsequencer.model
 
-data class PlayerNote(
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class SequencerNote(
         val tone: Double,
         val amplitude: Double,
         val sustain: Double,
