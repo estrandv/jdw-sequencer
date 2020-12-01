@@ -5,8 +5,6 @@ import com.github.kittinunf.fuel.Fuel
 import com.github.kittinunf.fuel.core.extensions.jsonBody
 import com.jackdaw.jdwsequencer.model.SequencerNote
 // https://stackoverflow.com/questions/65043370/type-mismatch-when-serializing-data-class
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.*
 import org.springframework.stereotype.Component
 
 @Component
@@ -33,9 +31,10 @@ class RestClient {
                     .also { println(it) }
                     .response { _ ->  }
         }
+    }
 
-
-
+    fun MIDISync(outputName: String) {
+        // TODO: Message appropriate service
     }
 
 }

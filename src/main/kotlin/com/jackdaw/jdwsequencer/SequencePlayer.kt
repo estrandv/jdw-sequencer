@@ -1,9 +1,20 @@
-package com.jackdaw.jdwsequencer.model
+package com.jackdaw.jdwsequencer
 
+import com.jackdaw.jdwsequencer.model.RestInputNote
+import com.jackdaw.jdwsequencer.model.SequencerNote
+import com.jackdaw.jdwsequencer.model.beatsToMilliSeconds
 import java.time.LocalDateTime
 import java.time.temporal.ChronoField
 import java.util.*
 
+/*
+    Holds two sets of notes: the CURRENT and the QUEUE.
+    Each time getNext() is called, we look for the next note in CURRENT.
+    If one or more is found, we return them and remove them from CURRENT.
+    If CURRENT is empty when getNext() is called, we de-queue QUEUE into CURRENT and
+        the loop starts over.
+    The same QUEUE will be used over and over until replaced.
+ */
 class SequencePlayer {
 
     /*
@@ -14,16 +25,11 @@ class SequencePlayer {
     private var lastCurrentSetEndNoteTime = 0.0
 
     private var currentNotes: MutableList<SequencerNote> = Collections.emptyList()
-    private var queuedNotes: MutableList<InputNote> = Collections.emptyList()
+    private var queuedNotes: MutableList<RestInputNote> = Collections.emptyList()
 
     private var loopStartTime: LocalDateTime = LocalDateTime.now()
 
-    // TODO: Might need tweaking for seconds/milliseconds but otherwise sound. Should be in UTIL.
-    fun beatsToMilliSeconds(beat: Double, bpm: Int): Long {
-        return (beat * (60.0 / bpm) * 1000).toLong();
-    }
-
-    fun queue(notes: List<InputNote>) {
+    fun queue(notes: List<RestInputNote>) {
         queuedNotes = mutableListOf()
         queuedNotes.addAll(notes)
     }
@@ -68,13 +74,7 @@ class SequencePlayer {
 
         val candidates = currentNotes.filter {
 
-            println("## For note: ${it.tone}")
-
-            println("loopStartTime: $loopStartTime")
-
-            println("Note startBeat: ${it.startBeat}")
             val start = beatsToMilliSeconds(it.startBeat, bpm)
-            println("Note start relative: $start")
             val noteTime = loopStartTime.plus(
                     start,
                     ChronoField.MILLI_OF_SECOND.baseUnit

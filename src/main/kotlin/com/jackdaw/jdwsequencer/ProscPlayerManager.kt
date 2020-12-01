@@ -1,37 +1,39 @@
 package com.jackdaw.jdwsequencer
 
-import com.jackdaw.jdwsequencer.model.InputNote
-import com.jackdaw.jdwsequencer.model.SequencePlayer
+import com.jackdaw.jdwsequencer.model.RestInputNote
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 
-// TODO: Even if prosc/midi can be split, there still needs
-//  to be a global bpm manager to handle sync sends for midi
+/*
+    Keeps track of underlying map of sequence players, sending their notes to
+    the prosc (supercollider) endpoint with playNext()
+ */
 @Component
 class ProscPlayerManager(
         val restClient: RestClient
 ) {
 
+    // <Output Name, Player>
     private var proscPlayers: MutableMap<String, SequencePlayer> = mutableMapOf();
 
     fun playNext(time: LocalDateTime, bpm: Int) {
 
-        println("Playing next...")
         for (player in proscPlayers) {
-            // TODO: Warn if next contains more than one note (overflow)
-
-            restClient.postProsc(player.key, player.value.getNext(time, bpm))
+            val notesOnTime = player.value.getNext(time, bpm)
+            if (notesOnTime.size > 1) {
+                println("WARNING: Same output ${player.key} playing multiple notes" +
+                        " at once. Your tickrate might be too slow for the given BPM/NoteLength.")
+            }
+            restClient.postProsc(player.key, notesOnTime)
         }
     }
 
-    fun queue(outputName: String, notes: List<InputNote>) {
+    fun queue(outputName: String, notes: List<RestInputNote>) {
         if (!proscPlayers.containsKey(outputName)) {
             proscPlayers[outputName] = SequencePlayer()
         }
 
         proscPlayers[outputName]?.queue(notes)
-
-        println("DEBUG: Reached the wired candidate!")
 
     }
 
