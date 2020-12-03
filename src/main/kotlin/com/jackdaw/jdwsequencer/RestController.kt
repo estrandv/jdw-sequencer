@@ -5,6 +5,7 @@ import com.jackdaw.jdwsequencer.model.RestInputSequenceData
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.bind.annotation.RestController
 
+// TODO: Port/url should be configurable and example calls outlined
 @RestController
 class RestController(
         val proscPlayerManager: ProscPlayerManager,

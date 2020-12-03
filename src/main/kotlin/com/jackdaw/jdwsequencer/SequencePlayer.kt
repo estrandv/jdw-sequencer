@@ -70,8 +70,6 @@ class SequencePlayer {
             loopStartTime = atTime
         }
 
-        println("At time $atTime")
-
         val candidates = currentNotes.filter {
 
             val start = beatsToMilliSeconds(it.startBeat, bpm)
