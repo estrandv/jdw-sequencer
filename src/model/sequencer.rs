@@ -1,10 +1,6 @@
-/*
-        val tone: Double,
-        val amplitude: Double,
-        val sustain: Double,
-        val startBeat: Double
- */
-#[derive(Debug, Clone, Copy)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SequencerNote {
     pub tone: i32,
     pub amplitude: f32,

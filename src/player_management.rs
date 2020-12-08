@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use crate::model::rest_input::RestInputNote;
 
 pub struct PROSCPlayerManager {
-    proscPlayers: Arc<Mutex<HashMap<String, Arc<Mutex<SequencePlayer>>>>>
+    proscPlayers: Arc<Mutex<HashMap<String, Arc<Mutex<SequencePlayer>>>>>,
+    rest_client: Arc<Mutex<RestClient>>
 }
 
 impl PROSCPlayerManager {
@@ -17,7 +18,7 @@ impl PROSCPlayerManager {
             let notes_on_time = player.lock().unwrap().get_next(time, bpm);
             if notes_on_time.len() > 1 {
                 println!("WARNING: Note overflow!");
-                RestClient::post_prosc(name, notes_on_time);
+                self.rest_client.lock().unwrap().post_prosc(name, notes_on_time);
             }
         }
     }
