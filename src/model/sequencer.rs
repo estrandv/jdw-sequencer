@@ -5,5 +5,5 @@ pub struct SequencerNote {
     pub tone: i32,
     pub amplitude: f32,
     pub sustain: f32,
-    pub startBeat: f32
+    pub start_beat: f32
 }

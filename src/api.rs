@@ -1,4 +1,3 @@
-// Endpoints: bpm, queue, testQueue
 // Access to playerManager (queue) and sequencerService (bpm)
 
 use rocket_contrib::json::Json;
@@ -21,6 +20,6 @@ pub fn queue(
 }
 
 #[get("/queue/test/<output_name>")]
-pub fn testQueue(output_name:String) {
+pub fn test_queue(output_name:String) {
 
 }

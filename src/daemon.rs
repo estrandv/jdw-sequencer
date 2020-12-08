@@ -7,27 +7,41 @@ use std::thread::sleep;
 use std::time;
 
 
-struct SequencerDaemon {
+pub struct SequencerDaemon {
     prosc_player_manager: Arc<Mutex<PROSCPlayerManager>>,
     bpm: Arc<Mutex<i32>>,
     tick_interval_ms: u64,
     beat_counter: Arc<Mutex<Cell<f32>>>,
-    last_tick_time: Arc<Mutex<DateTime<Utc>>>
+    last_tick_time: Arc<Mutex<Cell<DateTime<Utc>>>>
 }
 
 impl SequencerDaemon {
-   pub fn start(this: Arc<Mutex<SequencerDaemon>>) {
+    pub fn new(
+        ppm: Arc<Mutex<PROSCPlayerManager>>
+    ) -> SequencerDaemon {
+        SequencerDaemon {
+            prosc_player_manager: ppm,
+            bpm: Arc::new(Mutex::new(120)), // TODO: Replacable cell value
+            tick_interval_ms: 10,
+            beat_counter: Arc::new(Mutex::new(Cell::new(0.0))),
+            last_tick_time: Arc::new(Mutex::new(Cell::new(chrono::offset::Utc::now()))),
+        }
+    }
+
+    pub fn start(this: Arc<Mutex<SequencerDaemon>>) {
         thread::spawn(move || {
             loop {
                 let now = chrono::offset::Utc::now();
-                let elapsed = now.time() - this.lock().unwrap().last_tick_time.lock().unwrap().time();
+                let elapsed = now.time() - this.lock().unwrap().last_tick_time.lock().unwrap()
+                    .get()
+                    .time();
                 let ms_elapsed = crate::model::midi_utils::ms_to_beats(
                     elapsed.num_milliseconds(),
                     this.lock().unwrap().bpm.lock().unwrap().clone()
                 ) ;
-                this.lock().unwrap().beat_counter.lock().unwrap().update(|mut v| v + ms_elapsed);
+                this.lock().unwrap().beat_counter.lock().unwrap().update(| v| v + ms_elapsed);
+                this.lock().unwrap().last_tick_time.lock().unwrap().replace(now);
                 sleep(time::Duration::from_millis(this.lock().unwrap().tick_interval_ms));
-
             }
         });
    }

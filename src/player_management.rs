@@ -6,15 +6,22 @@ use chrono::{DateTime, Utc};
 use crate::model::rest_input::RestInputNote;
 
 pub struct PROSCPlayerManager {
-    proscPlayers: Arc<Mutex<HashMap<String, Arc<Mutex<SequencePlayer>>>>>,
+    prosc_players: Arc<Mutex<HashMap<String, Arc<Mutex<SequencePlayer>>>>>,
     rest_client: Arc<Mutex<RestClient>>
 }
 
 impl PROSCPlayerManager {
 
+    pub fn new(rc: Arc<Mutex<RestClient>>) -> PROSCPlayerManager {
+        PROSCPlayerManager {
+            prosc_players: Arc::new(Mutex::new(HashMap::new())),
+            rest_client: rc
+        }
+    }
+
     pub fn play_next(&self, time: DateTime<Utc>, bpm: i32) {
 
-        for (name, player) in self.proscPlayers.lock().unwrap().iter() {
+        for (name, player) in self.prosc_players.lock().unwrap().iter() {
             let notes_on_time = player.lock().unwrap().get_next(time, bpm);
             if notes_on_time.len() > 1 {
                 println!("WARNING: Note overflow!");
@@ -24,14 +31,14 @@ impl PROSCPlayerManager {
     }
 
     pub fn queue(&self, output_name: &str, notes: Vec<RestInputNote>) {
-        if !self.proscPlayers.lock().unwrap().contains_key(output_name) {
-            self.proscPlayers.lock().unwrap().insert(
+        if !self.prosc_players.lock().unwrap().contains_key(output_name) {
+            self.prosc_players.lock().unwrap().insert(
                 output_name.to_string(),
                 Arc::new(Mutex::new(SequencePlayer::new()))
             );
         }
 
-        self.proscPlayers.lock().unwrap().get(output_name).unwrap().lock().unwrap()
+        self.prosc_players.lock().unwrap().get(output_name).unwrap().lock().unwrap()
             .queue(notes);
     }
 

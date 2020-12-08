@@ -2,11 +2,8 @@ use crate::model::sequencer::SequencerNote;
 use std::cell::{Cell, RefCell};
 use crate::model::rest_input::RestInputNote;
 use chrono::*;
-use std::borrow::Borrow;
 use std::slice::SliceIndex;
 use crate::model::midi_utils::beats_to_milli_seconds;
-use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 pub struct SequencePlayer {
@@ -43,7 +40,7 @@ impl SequencePlayer {
                 tone: note.tone,
                 amplitude: note.amplitude,
                 sustain: note.sustain_time,
-                startBeat: beat
+                start_beat: beat
             };
 
             self.current_notes.lock().unwrap().get_mut().push(new_note);
@@ -78,7 +75,7 @@ impl SequencePlayer {
             .into_inner()
             .into_iter()
             .filter(|note| {
-                let start = beats_to_milli_seconds(note.startBeat, bpm);
+                let start = beats_to_milli_seconds(note.start_beat, bpm);
                 // TODO: The i64 conversion might cause a nasty "everything at once" bug
                 let note_time = self.loop_start_time.get() + Duration::milliseconds(start);
                 // Not 100% sure .time() is what we're looking for as "isBefore" replacement
@@ -89,7 +86,7 @@ impl SequencePlayer {
         // Since candidates is a copied set I cannot simply do a "contains(e)" check for filtering,
         // so instead I keep only the elements with a different start time than any listed in candidates
         self.current_notes.lock().unwrap().get_mut().retain(|e| {
-            !candidates.clone().into_iter().any(|e1| e1.startBeat == e.startBeat)
+            !candidates.clone().into_iter().any(|e1| e1.start_beat == e.start_beat)
         });
 
         candidates
