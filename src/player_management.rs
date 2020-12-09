@@ -5,6 +5,9 @@ use crate::sequence_player::SequencePlayer;
 use chrono::{DateTime, Utc};
 use crate::model::rest_input::RestInputNote;
 
+/*
+    Organizer for sequence players targeting PROSC.
+ */
 pub struct PROSCPlayerManager {
     prosc_players: Arc<Mutex<HashMap<String, Arc<Mutex<SequencePlayer>>>>>,
     rest_client: Arc<Mutex<RestClient>>
@@ -19,17 +22,25 @@ impl PROSCPlayerManager {
         }
     }
 
+    // Scan for upcoming notes in all players and send to PROSC where appropriate
     pub fn play_next(&self, time: DateTime<Utc>, bpm: i32) {
 
         for (name, player) in self.prosc_players.lock().unwrap().iter() {
             let notes_on_time = player.lock().unwrap().get_next(time, bpm);
             if notes_on_time.len() > 1 {
                 println!("WARNING: Note overflow!");
-                self.rest_client.lock().unwrap().post_prosc(name, notes_on_time);
+            }
+            if !notes_on_time.is_empty() {
+                println!("Note time!");
+                self.rest_client.clone().lock().unwrap()
+                    .local_post_prosc(name, notes_on_time.clone());
+                println!("Note sent!");
             }
         }
     }
 
+    // Queue a set of notes for the given output name.
+    // Non-existing output players will be created.
     pub fn queue(&self, output_name: &str, notes: Vec<RestInputNote>) {
         if !self.prosc_players.lock().unwrap().contains_key(output_name) {
             self.prosc_players.lock().unwrap().insert(

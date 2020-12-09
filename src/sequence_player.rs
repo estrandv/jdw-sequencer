@@ -6,6 +6,10 @@ use std::slice::SliceIndex;
 use crate::model::midi_utils::beats_to_milli_seconds;
 use std::sync::{Arc, Mutex};
 
+/*
+    Keeps track of an ordered set of notes to be played at relative times.
+    Core method is get_next() - see inline comments.
+ */
 pub struct SequencePlayer {
     // SEE: https://stackoverflow.com/questions/47748091/how-can-i-make-only-certain-struct-fields-mutable
     last_current_set_end_note_time: Cell<f32>, // Cell provides mutability for copy-implementing inner elements

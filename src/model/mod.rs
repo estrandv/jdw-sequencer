@@ -3,3 +3,4 @@ pub mod midi_out;
 pub mod midi_utils;
 pub mod sequencer;
 pub mod internal_types;
+pub mod prosc_api;

@@ -29,6 +29,7 @@ impl SequencerDaemon {
     }
 
     pub fn start(this: Arc<Mutex<SequencerDaemon>>) {
+
         thread::spawn(move || {
             loop {
                 let now = chrono::offset::Utc::now();
@@ -39,6 +40,20 @@ impl SequencerDaemon {
                     elapsed.num_milliseconds(),
                     this.lock().unwrap().bpm.lock().unwrap().clone()
                 ) ;
+
+                {
+                    let bpm = this.lock().unwrap()
+                        .bpm.lock().unwrap().clone();
+
+                    this.lock().unwrap()
+                        .prosc_player_manager.lock().unwrap()
+                        .play_next(
+                            now,
+                                bpm
+                        );
+                }
+
+                // TODO: Midi sync according to beat
                 this.lock().unwrap().beat_counter.lock().unwrap().update(| v| v + ms_elapsed);
                 this.lock().unwrap().last_tick_time.lock().unwrap().replace(now);
                 sleep(time::Duration::from_millis(this.lock().unwrap().tick_interval_ms));
