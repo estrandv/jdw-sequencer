@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
     Keeps track of an ordered set of notes to be played at relative times.
     Core method is get_next() - see inline comments.
  */
+type Closure = Arc<Mutex<RefCell<Box<dyn Fn(f32) + Send>>>>;
 pub struct SequencePlayer {
     // SEE: https://stackoverflow.com/questions/47748091/how-can-i-make-only-certain-struct-fields-mutable
     last_current_set_end_note_time: Cell<f32>, // Cell provides mutability for copy-implementing inner elements
@@ -17,25 +18,40 @@ pub struct SequencePlayer {
     // Needs both mutable and immutable references during shift_queue()
     current_notes: Arc<Mutex<RefCell<Vec<SequencerNote>>>>,
     // Needs to be internally mutable with non-copying inner elements
-    queued_notes: Arc<Mutex<RefCell<Vec<RestInputNote>>>>
+    queued_notes: Arc<Mutex<RefCell<Vec<RestInputNote>>>>,
+    pub target_output: Arc<Mutex<String>>
 }
 
 impl SequencePlayer {
 
-    pub fn new() -> SequencePlayer {
+    pub fn new(target_output: &str) -> SequencePlayer {
         SequencePlayer {
             last_current_set_end_note_time: Cell::new(0.0),
             loop_start_time: Cell::new(chrono::offset::Utc::now()),
             current_notes: Arc::new((Mutex::new(RefCell::new(Vec::new())))),
-            queued_notes: Arc::new(Mutex::new(RefCell::new(Vec::new())))
+            queued_notes: Arc::new(Mutex::new(RefCell::new(Vec::new()))),
+            target_output: Arc::new(Mutex::new(target_output.to_string()))
         }
+    }
+
+    // Check if the player is ready to reset
+    pub fn is_finished(&self) -> bool {
+        self.current_notes.lock().unwrap().borrow().is_empty()
+    }
+
+    pub fn queued_time(&self) -> f32 {
+        self.queued_notes.lock().unwrap().clone()
+            .into_inner()
+            .iter()
+            .map(|note| note.reserved_time)
+            .sum()
     }
 
     pub fn queue(&self, new_notes: Vec<RestInputNote>) {
         self.queued_notes.lock().unwrap().replace(new_notes);
     }
 
-    pub fn shift_queue(&self) {
+    pub fn shift_queue(&self, at_time: DateTime<Utc>) {
         self.current_notes.lock().unwrap().replace(Vec::new());
 
         let mut beat: f32 = self.last_current_set_end_note_time.get().clone();
@@ -50,6 +66,7 @@ impl SequencePlayer {
             self.current_notes.lock().unwrap().get_mut().push(new_note);
 
             beat += note.reserved_time;
+
         }
 
         // Next time we load queued notes, use the last reserved time of
@@ -60,18 +77,39 @@ impl SequencePlayer {
                 Some(last_note) => last_note.reserved_time,
                 None => 0.0
             }
-        )
+        );
+
+        self.loop_start_time.set(at_time);
     }
 
+    /*
+        TODO: New queued outputs don't come in "on queue".
+        - Since get_next is standalone, it has no concept of a "sequencer loop"
+        - The most natural way to insert new outputs that haven't been playing before
+            is to star them after the current longest finishes playing
+        - Thus, if an output is queued that hasn't been playing before, it needs to wait for
+            the current longest output set to finish before beginning.
+        - This means that a brand new sequence player should be initialized with some sort
+            of playblock that doesn't allow get_next (or shift_queue?) to be called.
+        - The player manager then needs to have some sort of idea what the length of the
+            "current loop" is.
+        - INitial sketch:
+            - Queue is called. If we have no previous queues, we unlock the player immediately
+                and set the length of its loop as "longest_sequence_length"
+                - Pitfall: If all our queues have been set back to blank we cannot
+                return to start
+            - When shift_queue is called in the player, a callback executes. If the finished
+                queue is the "longest_sequence_length" we enable all disabled players
+                immediately.
+         - Other issues:
+            - IF we have uneven sequencing, the parts that start over on their own will
+                do so in ways that might not align with the "next loop start"
+     */
     pub fn get_next(&self, at_time: DateTime<Utc>, bpm: i32) -> Vec<SequencerNote> {
 
-        // Note: I haven no idea how to use rc+refcell
-        // https://rust-unofficial.github.io/too-many-lists/fourth-breaking.html
-        // I feel some of these steps should be implicit but oh well...
-        // UPDATE: Saving comment but we're using arc/mutex now
-        if self.current_notes.lock().unwrap().clone().into_inner().is_empty(){
-            self.shift_queue();
-            self.loop_start_time.set(at_time);
+        // Nothing to do, stall...
+        if self.is_finished() {
+            return Vec::new();
         }
 
         let candidates = self.current_notes.lock().unwrap()

@@ -32,7 +32,7 @@ pub fn main() {
     // Debugging, but also in a sense a wakeup tone!
     {
         client_ref.clone().lock().unwrap().local_post_prosc("blipp", vec!(SequencerNote {
-            tone: 440,
+            tone: 440.0,
             amplitude: 1.0,
             sustain: 1.0,
             start_beat: 0.0
