@@ -6,45 +6,39 @@ use tracing::instrument;
 
 #[derive(Debug)]
 pub struct RestClient{
-    r_client: reqwest::blocking::Client,
-    url: String
+    r_client: reqwest::blocking::Client
 }
 
 impl RestClient {
 
     pub fn new() -> RestClient {
         RestClient {
-            r_client: reqwest::blocking::Client::new(),
-            url: "http://localhost:5000/".to_string()
+            r_client: reqwest::blocking::Client::new()
         }
     }
 
     #[instrument] // Enables extra logging for things that can go wrong in-call.
-    pub fn local_post_prosc(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
+    pub fn post_notes(&self, url: &str, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
 
-        let url = format!("{}{}", self.url, "impl/s_new");
+        for note in notes {
 
-        // TODO: it's just the one note right now
-        let note = notes.get(0).unwrap();
+            let message = SNewMessage::new(
+                output_key.to_string(),
+                vec!(
+                    OSCValueField::new("amp", note.amplitude),
+                    OSCValueField::new("sus", note.sustain),
+                    OSCValueField::new("freq", note.tone as f32),
+                )
+            );
 
-        let message = SNewMessage::new(
-            output_key.to_string(),
-            vec!(
-                OSCValueField::new("amp", note.amplitude),
-                OSCValueField::new("sus", note.sustain),
-                OSCValueField::new("freq", note.tone as f32),
-            )
-        );
+            let json = serde_json::json!(message);
 
-        let json = serde_json::json!(message);
+            println!("Posting to {}, Message: {}", &url, &json);
 
-        println!("Posting to {}, Message: {}", &url, &json);
-
-        self.r_client.post(&url)
-            .json(&json)
-            .send()?;
-
-        //info!("Response: {:?}", response);
+            self.r_client.post(url)
+                .json(&json)
+                .send()?;
+        }
 
         Ok(())
 

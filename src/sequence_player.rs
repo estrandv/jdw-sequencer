@@ -19,18 +19,20 @@ pub struct SequencePlayer {
     current_notes: Arc<Mutex<RefCell<Vec<SequencerNote>>>>,
     // Needs to be internally mutable with non-copying inner elements
     queued_notes: Arc<Mutex<RefCell<Vec<RestInputNote>>>>,
-    pub target_output: Arc<Mutex<String>>
+    pub target_output: Arc<Mutex<String>>,
+    pub target_url: String
 }
 
 impl SequencePlayer {
 
-    pub fn new(target_output: &str) -> SequencePlayer {
+    pub fn new(target_url: &str, target_output: &str) -> SequencePlayer {
         SequencePlayer {
             last_current_set_end_note_time: Cell::new(0.0),
             loop_start_time: Cell::new(chrono::offset::Utc::now()),
             current_notes: Arc::new((Mutex::new(RefCell::new(Vec::new())))),
             queued_notes: Arc::new(Mutex::new(RefCell::new(Vec::new()))),
-            target_output: Arc::new(Mutex::new(target_output.to_string()))
+            target_output: Arc::new(Mutex::new(target_output.to_string())),
+            target_url: target_url.to_string()
         }
     }
 

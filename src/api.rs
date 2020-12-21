@@ -23,7 +23,7 @@ pub fn queue(
     notes: Json<Vec<RestInputNote>>,
     prosc_manager: State<Arc<Mutex<PROSCPlayerManager>>>
 ) {
-    prosc_manager.lock().unwrap().queue(&output_name, &alias,notes.into_inner());
+    prosc_manager.lock().unwrap().queue_prosc(&output_name, &alias, notes.into_inner());
 }
 
 #[get("/queue/test/<output_name>")]
@@ -32,7 +32,7 @@ pub fn test_queue(
     prosc_manager: State<Arc<Mutex<PROSCPlayerManager>>>
 ) {
     prosc_manager.lock().unwrap()
-        .queue(&output_name,"testQueue", vec!(
+        .queue_prosc(&output_name, "testQueue", vec!(
             RestInputNote::new(440.0, 1.0, 0.5, 1.0),
             RestInputNote::new(640.0, 2.0, 1.0, 1.0),
         ));

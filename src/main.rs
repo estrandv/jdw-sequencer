@@ -31,7 +31,8 @@ pub fn main() {
 
     // Debugging, but also in a sense a wakeup tone!
     {
-        client_ref.clone().lock().unwrap().local_post_prosc("blipp", vec!(SequencerNote {
+        // Prosc url, should probably be a constant
+        client_ref.clone().lock().unwrap().post_notes("http://localhost:5000/impl/s_new", "blipp", vec!(SequencerNote {
             tone: 440.0,
             amplitude: 1.0,
             sustain: 1.0,

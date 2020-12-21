@@ -32,7 +32,6 @@ impl PROSCPlayerManager {
             .all(|player| player.lock().unwrap().is_finished());
 
         if all_finished {
-            println!("Resetting loop and enabling all players...");
             for (_, player) in self.prosc_players.lock().unwrap().iter() {
                 player.lock().unwrap().shift_queue(time);
             }
@@ -44,26 +43,27 @@ impl PROSCPlayerManager {
                 println!("WARNING: Note overflow!");
             }
             if !notes_on_time.is_empty() {
-                println!("Note time!");
+
+                let url = player.lock().unwrap().target_url.clone();
+                let output = player.lock().unwrap().target_output.lock().unwrap().clone();
+
                 self.rest_client.clone().lock().unwrap()
-                    .local_post_prosc(&player
-                        .lock()
-                        .unwrap()
-                        .target_output
-                        .lock()
-                        .unwrap(), notes_on_time.clone());
-                println!("Note sent!");
+                    .post_notes(&url, &output, notes_on_time.clone());
             }
         }
     }
 
     // Queue a set of notes for the given output name.
     // Non-existing output players will be created.
-    pub fn queue(&self, output_name: &str, alias: &str, notes: Vec<RestInputNote>) {
+    pub fn queue_prosc(&self, output_name: &str, alias: &str, notes: Vec<RestInputNote>) {
         if !self.prosc_players.lock().unwrap().contains_key(alias) {
             self.prosc_players.lock().unwrap().insert(
                 alias.to_string(),
-                Arc::new(Mutex::new(SequencePlayer::new(output_name)))
+                // TODO: Prosc url constant
+                Arc::new(Mutex::new(SequencePlayer::new(
+                    "http://localhost:5000/impl/s_new",
+                    output_name))
+                )
             );
         }
 
