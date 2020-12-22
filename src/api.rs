@@ -6,10 +6,14 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use crate::model::rest_input::RestInputNote;
 use crate::player_management::PROSCPlayerManager;
+use crate::daemon::SequencerDaemon;
 
 #[get("/bpm/<bpm>")]
-pub fn set_bpm(bpm: String) {
-
+pub fn set_bpm(
+    daemon: State<Arc<Mutex<SequencerDaemon>>>,
+    bpm: i32
+) {
+    daemon.lock().unwrap().bpm(bpm);
 }
 /*
     Queue notes to registered prosc output of name

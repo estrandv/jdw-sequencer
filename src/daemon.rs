@@ -9,7 +9,7 @@ use std::time;
 
 pub struct SequencerDaemon {
     prosc_player_manager: Arc<Mutex<PROSCPlayerManager>>,
-    bpm: Arc<Mutex<i32>>,
+    pub bpm: Arc<Mutex<Cell<i32>>>,
     tick_interval_ms: u64,
     beat_counter: Arc<Mutex<Cell<f32>>>,
     last_tick_time: Arc<Mutex<Cell<DateTime<Utc>>>>
@@ -21,11 +21,15 @@ impl SequencerDaemon {
     ) -> SequencerDaemon {
         SequencerDaemon {
             prosc_player_manager: ppm,
-            bpm: Arc::new(Mutex::new(120)), // TODO: Replacable cell value
+            bpm: Arc::new(Mutex::new(Cell::new(120))), // TODO: Replacable cell value
             tick_interval_ms: 2,
             beat_counter: Arc::new(Mutex::new(Cell::new(0.0))),
             last_tick_time: Arc::new(Mutex::new(Cell::new(chrono::offset::Utc::now()))),
         }
+    }
+
+    pub fn bpm(&self, set_to: i32) {
+        self.bpm.lock().unwrap().replace(set_to);
     }
 
     pub fn start(this: Arc<Mutex<SequencerDaemon>>) {
@@ -38,7 +42,7 @@ impl SequencerDaemon {
                     .time();
                 let ms_elapsed = crate::model::midi_utils::ms_to_beats(
                     elapsed.num_milliseconds(),
-                    this.lock().unwrap().bpm.lock().unwrap().clone()
+                    this.lock().unwrap().bpm.lock().unwrap().get().clone()
                 ) ;
 
                 {
@@ -49,7 +53,7 @@ impl SequencerDaemon {
                         .prosc_player_manager.lock().unwrap()
                         .play_next(
                             now,
-                                bpm
+                                bpm.get()
                         );
                 }
 
