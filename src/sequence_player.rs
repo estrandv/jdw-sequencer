@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
     Keeps track of an ordered set of notes to be played at relative times.
     Core method is get_next() - see inline comments.
  */
-type Closure = Arc<Mutex<RefCell<Box<dyn Fn(f32) + Send>>>>;
 pub struct SequencePlayer {
     // SEE: https://stackoverflow.com/questions/47748091/how-can-i-make-only-certain-struct-fields-mutable
     loop_start_time: Cell<DateTime<Utc>>,
@@ -97,30 +96,7 @@ impl SequencePlayer {
 
         self.loop_start_time.set(at_time);
     }
-
-    /*
-        TODO: New queued outputs don't come in "on queue".
-        - Since get_next is standalone, it has no concept of a "sequencer loop"
-        - The most natural way to insert new outputs that haven't been playing before
-            is to star them after the current longest finishes playing
-        - Thus, if an output is queued that hasn't been playing before, it needs to wait for
-            the current longest output set to finish before beginning.
-        - This means that a brand new sequence player should be initialized with some sort
-            of playblock that doesn't allow get_next (or shift_queue?) to be called.
-        - The player manager then needs to have some sort of idea what the length of the
-            "current loop" is.
-        - INitial sketch:
-            - Queue is called. If we have no previous queues, we unlock the player immediately
-                and set the length of its loop as "longest_sequence_length"
-                - Pitfall: If all our queues have been set back to blank we cannot
-                return to start
-            - When shift_queue is called in the player, a callback executes. If the finished
-                queue is the "longest_sequence_length" we enable all disabled players
-                immediately.
-         - Other issues:
-            - IF we have uneven sequencing, the parts that start over on their own will
-                do so in ways that might not align with the "next loop start"
-     */
+    
     pub fn get_next(&self, at_time: DateTime<Utc>, bpm: i32) -> Vec<SequencerNote> {
 
         // Nothing to do, stall...

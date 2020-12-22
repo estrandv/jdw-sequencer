@@ -1,1 +1,0 @@
-// Data class containing tone: int, sustain_time: double, amplitude: double

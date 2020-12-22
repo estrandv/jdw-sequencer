@@ -48,7 +48,7 @@ impl PROSCPlayerManager {
                 let output = player.lock().unwrap().target_output.lock().unwrap().clone();
 
                 self.rest_client.clone().lock().unwrap()
-                    .post_notes(&url, &output, notes_on_time.clone());
+                    .post_prosc_notes(&url, &output, notes_on_time.clone());
             }
         }
     }
