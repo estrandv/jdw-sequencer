@@ -1,4 +1,4 @@
-use crate::player_management::{PROSCPlayerManager};
+use crate::player_management::{PlayerManager};
 use std::sync::{Arc, Mutex};
 use std::cell::{RefCell, Cell};
 use chrono::{DateTime, Utc};
@@ -8,7 +8,7 @@ use std::time;
 
 
 pub struct SequencerDaemon {
-    prosc_player_manager: Arc<Mutex<PROSCPlayerManager>>,
+    prosc_player_manager: Arc<Mutex<PlayerManager>>,
     pub bpm: Arc<Mutex<Cell<i32>>>,
     tick_interval_ms: u64,
     beat_counter: Arc<Mutex<Cell<f32>>>,
@@ -17,7 +17,7 @@ pub struct SequencerDaemon {
 
 impl SequencerDaemon {
     pub fn new(
-        ppm: Arc<Mutex<PROSCPlayerManager>>
+        ppm: Arc<Mutex<PlayerManager>>
     ) -> SequencerDaemon {
         SequencerDaemon {
             prosc_player_manager: ppm,

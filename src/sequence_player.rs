@@ -7,6 +7,15 @@ use crate::model::midi_utils::beats_to_milli_seconds;
 use std::sync::{Arc, Mutex};
 
 /*
+    In school we were taught not to create behaviours based on flags when polymorphism was available.
+    In rust I learned to take shortcuts I can live with...
+ */
+pub enum PlayerTarget {
+    PROSC,
+    MIDI
+}
+
+/*
     Keeps track of an ordered set of notes to be played at relative times.
     Core method is get_next() - see inline comments.
  */
@@ -18,18 +27,18 @@ pub struct SequencePlayer {
     // Needs to be internally mutable with non-copying inner elements
     queued_notes: Arc<Mutex<RefCell<Vec<RestInputNote>>>>,
     pub target_output: Arc<Mutex<String>>,
-    pub target_url: String
+    pub player_target: PlayerTarget
 }
 
 impl SequencePlayer {
 
-    pub fn new(target_url: &str, target_output: &str) -> SequencePlayer {
+    pub fn new(player_target: PlayerTarget, target_output: &str) -> SequencePlayer {
         SequencePlayer {
             loop_start_time: Cell::new(chrono::offset::Utc::now()),
             current_notes: Arc::new((Mutex::new(RefCell::new(Vec::new())))),
             queued_notes: Arc::new(Mutex::new(RefCell::new(Vec::new()))),
             target_output: Arc::new(Mutex::new(target_output.to_string())),
-            target_url: target_url.to_string()
+            player_target
         }
     }
 
@@ -96,7 +105,7 @@ impl SequencePlayer {
 
         self.loop_start_time.set(at_time);
     }
-    
+
     pub fn get_next(&self, at_time: DateTime<Utc>, bpm: i32) -> Vec<SequencerNote> {
 
         // Nothing to do, stall...

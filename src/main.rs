@@ -11,7 +11,7 @@ pub mod sequence_player;
 
 use crate::api::*;
 use crate::rest::RestClient;
-use crate::player_management::PROSCPlayerManager;
+use crate::player_management::PlayerManager;
 use std::sync::{Arc, Mutex};
 use crate::daemon::SequencerDaemon;
 use crate::model::sequencer::SequencerNote;
@@ -20,7 +20,7 @@ pub fn main() {
 
     let client = RestClient::new();
     let client_ref = Arc::new(Mutex::new(client));
-    let prosc_manager = PROSCPlayerManager::new(client_ref.clone());
+    let prosc_manager = PlayerManager::new(client_ref.clone());
     let pm_ref = Arc::new(Mutex::new(prosc_manager));
     let daemon = SequencerDaemon::new(pm_ref.clone());
     let daemon_ref = Arc::new(Mutex::new(daemon));
@@ -32,7 +32,7 @@ pub fn main() {
     // Debugging, but also in a sense a wakeup tone!
     {
         // Prosc url, should probably be a constant
-        client_ref.clone().lock().unwrap().post_prosc_notes("http://localhost:5000/impl/s_new", "blipp", vec!(SequencerNote {
+        client_ref.clone().lock().unwrap().post_prosc_notes( "blipp", vec!(SequencerNote {
             tone: 440.0,
             amplitude: 1.0,
             sustain: 1.0,
@@ -41,7 +41,7 @@ pub fn main() {
     }
 
     rocket::ignite()
-        .mount("/", routes![api::set_bpm, api::queue, api::test_queue])
+        .mount("/", routes![api::set_bpm, api::queue_prosc, api::queue_midi, api::test_queue])
         .manage(pm_ref)
         .manage(daemon_ref)
         .launch();

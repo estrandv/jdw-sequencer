@@ -19,7 +19,9 @@ impl RestClient {
     }
 
     #[instrument] // Enables extra logging for things that can go wrong in-call.
-    pub fn post_prosc_notes(&self, url: &str, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
+    pub fn post_prosc_notes(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
+
+        let url = "http://localhost:5000/impl/s_new";
 
         for note in notes {
 
@@ -50,7 +52,9 @@ impl RestClient {
         Clumsily duplicated due to poor understanding of rust traits and lifetimes.
      */
     #[instrument] // Enables extra logging for things that can go wrong in-call.
-    pub fn post_midi_notes(&self, url: &str, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
+    pub fn post_midi_notes(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
+
+        let url = format!("http://localhost:11000/play/{}", output_key);
 
         for note in notes {
 
@@ -62,9 +66,7 @@ impl RestClient {
 
             let json = serde_json::json!(message);
 
-            println!("Posting to {}, Message: {}", &url, &json);
-
-            self.r_client.post(url)
+            self.r_client.post(&url)
                 .json(&json)
                 .send()?;
         }
