@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 type Closure = Arc<Mutex<RefCell<Box<dyn Fn(f32) + Send>>>>;
 pub struct SequencePlayer {
     // SEE: https://stackoverflow.com/questions/47748091/how-can-i-make-only-certain-struct-fields-mutable
-    last_current_set_end_note_time: Cell<f32>, // Cell provides mutability for copy-implementing inner elements
     loop_start_time: Cell<DateTime<Utc>>,
     // Needs both mutable and immutable references during shift_queue()
     current_notes: Arc<Mutex<RefCell<Vec<SequencerNote>>>>,
@@ -27,7 +26,6 @@ impl SequencePlayer {
 
     pub fn new(target_url: &str, target_output: &str) -> SequencePlayer {
         SequencePlayer {
-            last_current_set_end_note_time: Cell::new(0.0),
             loop_start_time: Cell::new(chrono::offset::Utc::now()),
             current_notes: Arc::new((Mutex::new(RefCell::new(Vec::new())))),
             queued_notes: Arc::new(Mutex::new(RefCell::new(Vec::new()))),
@@ -53,10 +51,14 @@ impl SequencePlayer {
         self.queued_notes.lock().unwrap().replace(new_notes);
     }
 
+    /*
+        Clear all current notes, calculate start times for the queued ones
+            and shift those new notes into current.
+     */
     pub fn shift_queue(&self, at_time: DateTime<Utc>) {
         self.current_notes.lock().unwrap().replace(Vec::new());
 
-        let mut beat: f32 = self.last_current_set_end_note_time.get().clone();
+        let mut beat: f32 = 0.0;
         for note in self.queued_notes.lock().unwrap().clone().into_inner() {
             let new_note = SequencerNote {
                 tone: note.tone,
@@ -71,15 +73,27 @@ impl SequencePlayer {
 
         }
 
-        // Next time we load queued notes, use the last reserved time of
-        // this set to create a starting point (so that the last note gets
-        // time to finish)
-        self.last_current_set_end_note_time.set(
-            match self.queued_notes.lock().unwrap().clone().into_inner().last() {
-                Some(last_note) => last_note.reserved_time,
-                None => 0.0
-            }
-        );
+        /*
+            Since we gradually remove notes from the current set as they are played
+                and notes are played based on their relative position to the previous one,
+                we need a final "ghost note" to be played at the end time of the second last
+                one for is_finished() to work correctly.
+
+                TODO: This statement can be simplified
+         */
+        match self.queued_notes.lock().unwrap().clone().into_inner().last() {
+            Some(_) => {
+                let new_note = SequencerNote {
+                    tone: 0.0,
+                    amplitude: 0.0,
+                    sustain: 0.0,
+                    start_beat: beat
+                };
+
+                self.current_notes.lock().unwrap().get_mut().push(new_note);
+            },
+            None => ()
+        }
 
         self.loop_start_time.set(at_time);
     }
