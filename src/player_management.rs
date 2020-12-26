@@ -35,7 +35,12 @@ impl PlayerManager {
             for (_, player) in self.sequence_players.lock().unwrap().iter() {
                 player.lock().unwrap().shift_queue(time);
             }
+
+            // Sorta cultish. Since it should take a tick before we trigger the next note... I dunno,
+            // the important thing to note is that this is an experiment.
+            return;
         }
+
 
         for (_, player) in self.sequence_players.lock().unwrap().iter() {
             let notes_on_time = player.lock().unwrap().get_next(time, bpm);
@@ -54,11 +59,17 @@ impl PlayerManager {
                     PlayerTarget::MIDI => {
                         self.rest_client.clone().lock().unwrap()
                             .post_midi_notes( &output, notes_on_time.clone());
-                    }
+                    },
+                    PlayerTarget::PROSC_SAMPLE => {
+                        self.rest_client.clone().lock().unwrap()
+                            .post_prosc_samples( &output, notes_on_time.clone());
+                    },
                 }
 
             }
         }
+
+
     }
 
     // Queue a set of notes for the given output name.

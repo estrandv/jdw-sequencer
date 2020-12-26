@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
  */
 pub enum PlayerTarget {
     PROSC,
-    MIDI
+    MIDI,
+    PROSC_SAMPLE
 }
 
 /*
@@ -133,5 +134,44 @@ impl SequencePlayer {
         });
 
         candidates
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::sequence_player::{SequencePlayer, PlayerTarget};
+    use crate::model::rest_input::RestInputNote;
+    use chrono::DateTime;
+    use std::time::Duration;
+
+    #[test]
+    fn sequence_length() {
+        let player = SequencePlayer::new(PlayerTarget::PROSC, "none");
+        player.queue(vec!(
+            RestInputNote::new(1.0, 1.0, 1.0, 1.0),
+            RestInputNote::new(1.0, 0.4, 1.0, 1.0),
+            RestInputNote::new(1.0, 0.5, 1.0, 1.0),
+            RestInputNote::new(1.0, 0.2, 1.0, 1.0),
+            RestInputNote::new(1.0, 0.2, 1.0, 0.0),
+        ));
+
+        let time = chrono::offset::Utc::now();
+
+        player.shift_queue(time);
+
+        let mut start_times: Vec<f32> = Vec::new();
+        let mut i: f32 = 0.0;
+        while i < 10.0 {
+            let current = time + chrono::Duration::milliseconds((i * 1000.0) as i64);
+
+            if !player.get_next(current, 60).is_empty() {
+                start_times.push(i);
+            }
+
+            i = i + 0.1;
+        }
+
+        assert_eq!(vec!(0.0, 1.0, 1.4, 1.9, 2.1, 2.3), start_times);
     }
 }

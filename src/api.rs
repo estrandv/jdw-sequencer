@@ -31,6 +31,16 @@ pub fn queue_prosc(
     player_manager.lock().unwrap().queue_notes(PlayerTarget::PROSC, &output_name, &alias, notes.into_inner());
 }
 
+#[post("/queue/prosc_sample/<output_name>/<alias>", format="json", data="<notes>")]
+pub fn queue_prosc_sample(
+    output_name: String,
+    alias: String,
+    notes: Json<Vec<RestInputNote>>,
+    player_manager: State<Arc<Mutex<PlayerManager>>>
+) {
+    player_manager.lock().unwrap().queue_notes(PlayerTarget::PROSC_SAMPLE, &output_name, &alias, notes.into_inner());
+}
+
 #[post("/queue/midi/<output_name>/<alias>", format="json", data="<notes>")]
 pub fn queue_midi(
     output_name: String,
