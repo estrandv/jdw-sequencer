@@ -38,7 +38,9 @@ impl RestClient {
             // is pretty much useless atm.
             let message = SNewMessage::new(
                 output_key.to_string(),
-                vec!()
+                vec!(
+                    OSCValueField::new("amp", note.amplitude),
+                    )
             );
 
             let json = serde_json::json!(message);
