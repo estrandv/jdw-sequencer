@@ -25,6 +25,12 @@ impl PlayerManager {
         }
     }
 
+    pub fn force_reset(&self, time: DateTime<Utc>) {
+        for (_, player) in self.sequence_players.lock().unwrap().iter() {
+            player.lock().unwrap().shift_queue(time);
+        }
+    }
+
     // Scan for upcoming notes in all players and send to PROSC where appropriate
     pub fn play_next(&self, time: DateTime<Utc>, bpm: i32) {
 
@@ -32,9 +38,8 @@ impl PlayerManager {
             .all(|player| player.lock().unwrap().is_finished());
 
         if all_finished {
-            for (_, player) in self.sequence_players.lock().unwrap().iter() {
-                player.lock().unwrap().shift_queue(time);
-            }
+
+            self.force_reset(time);
 
             // Sorta cultish. Since it should take a tick before we trigger the next note... I dunno,
             // the important thing to note is that this is an experiment.

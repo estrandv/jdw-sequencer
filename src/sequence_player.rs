@@ -163,13 +163,14 @@ mod tests {
         let mut start_times: Vec<f32> = Vec::new();
         let mut i: f32 = 0.0;
         while i < 10.0 {
+            print!("MS: {}\n", i);
             let current = time + chrono::Duration::milliseconds((i * 1000.0) as i64);
 
             if !player.get_next(current, 60).is_empty() {
                 start_times.push(i);
             }
 
-            i = i + 0.1;
+            i = i + 0.1000000000;
         }
 
         assert_eq!(vec!(0.0, 1.0, 1.4, 1.9, 2.1, 2.3), start_times);

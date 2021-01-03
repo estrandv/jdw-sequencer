@@ -16,6 +16,14 @@ pub fn set_bpm(
 ) {
     daemon.lock().unwrap().bpm(bpm);
 }
+
+#[get("/queue/reset")]
+pub fn reset_queue(
+    player_manager: State<Arc<Mutex<PlayerManager>>>
+) {
+    player_manager.lock().unwrap().force_reset(chrono::offset::Utc::now());
+}
+
 /*
     Queue notes to registered prosc output of name
     Use the given alias; with differnet aliases you can queue several sets to the same

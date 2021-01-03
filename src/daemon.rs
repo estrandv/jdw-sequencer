@@ -21,7 +21,7 @@ impl SequencerDaemon {
     ) -> SequencerDaemon {
         SequencerDaemon {
             prosc_player_manager: ppm,
-            bpm: Arc::new(Mutex::new(Cell::new(120))), // TODO: Replacable cell value
+            bpm: Arc::new(Mutex::new(Cell::new(120))),
             tick_interval_ms: 2,
             beat_counter: Arc::new(Mutex::new(Cell::new(0.0))),
             last_tick_time: Arc::new(Mutex::new(Cell::new(chrono::offset::Utc::now()))),
