@@ -12,7 +12,8 @@ pub struct SequencerDaemon {
     pub bpm: Arc<Mutex<Cell<i32>>>,
     tick_interval_ms: u64,
     beat_counter: Arc<Mutex<Cell<f32>>>,
-    last_tick_time: Arc<Mutex<Cell<DateTime<Utc>>>>
+    last_tick_time: Arc<Mutex<Cell<DateTime<Utc>>>>,
+    pub silenced: Arc<Mutex<Cell<bool>>>
 }
 
 impl SequencerDaemon {
@@ -25,11 +26,15 @@ impl SequencerDaemon {
             tick_interval_ms: 2,
             beat_counter: Arc::new(Mutex::new(Cell::new(0.0))),
             last_tick_time: Arc::new(Mutex::new(Cell::new(chrono::offset::Utc::now()))),
+            silenced: Arc::new(Mutex::new(Cell::new(false)))
         }
     }
 
     pub fn bpm(&self, set_to: i32) {
         self.bpm.lock().unwrap().replace(set_to);
+    }
+    pub fn silenced(&self, set_to: bool) {
+        self.silenced.lock().unwrap().replace(set_to);
     }
 
     pub fn start(this: Arc<Mutex<SequencerDaemon>>) {
@@ -45,16 +50,21 @@ impl SequencerDaemon {
                     this.lock().unwrap().bpm.lock().unwrap().get().clone()
                 ) ;
 
-                {
-                    let bpm = this.lock().unwrap()
-                        .bpm.lock().unwrap().clone();
 
-                    this.lock().unwrap()
-                        .prosc_player_manager.lock().unwrap()
-                        .play_next(
-                            now,
+                {
+                    // Only order note playing if not silenced
+                    let slc = this.lock().unwrap().silenced.lock().unwrap().get();
+                    if !slc {
+                        let bpm = this.lock().unwrap()
+                            .bpm.lock().unwrap().clone();
+
+                        this.lock().unwrap()
+                            .prosc_player_manager.lock().unwrap()
+                            .play_next(
+                                now,
                                 bpm.get()
-                        );
+                            );
+                    }
                 }
 
                 // TODO: Midi sync according to beat

@@ -17,10 +17,19 @@ pub fn set_bpm(
     daemon.lock().unwrap().bpm(bpm);
 }
 
+#[get("/stop")]
+pub fn stop(
+    daemon: State<Arc<Mutex<SequencerDaemon>>>
+) {
+    daemon.lock().unwrap().silenced(true);
+}
+
 #[get("/queue/reset")]
 pub fn reset_queue(
-    player_manager: State<Arc<Mutex<PlayerManager>>>
+    player_manager: State<Arc<Mutex<PlayerManager>>>,
+    daemon: State<Arc<Mutex<SequencerDaemon>>>
 ) {
+    daemon.lock().unwrap().silenced(false);
     player_manager.lock().unwrap().force_reset(chrono::offset::Utc::now());
 }
 

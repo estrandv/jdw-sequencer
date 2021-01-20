@@ -49,7 +49,8 @@ pub fn main() {
                 api::queue_prosc_sample,
                 api::queue_midi,
                 api::test_queue,
-                api::reset_queue
+                api::reset_queue,
+                api::stop
                 ])
         .manage(pm_ref)
         .manage(daemon_ref)
