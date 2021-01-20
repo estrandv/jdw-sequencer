@@ -5,10 +5,12 @@ use chrono::{DateTime, Utc};
 use std::thread;
 use std::thread::sleep;
 use std::time;
+use crate::rest::RestClient;
 
 
 pub struct SequencerDaemon {
     prosc_player_manager: Arc<Mutex<PlayerManager>>,
+    rest_client: Arc<Mutex<RestClient>>,
     pub bpm: Arc<Mutex<Cell<i32>>>,
     tick_interval_ms: u64,
     beat_counter: Arc<Mutex<Cell<f32>>>,
@@ -18,10 +20,12 @@ pub struct SequencerDaemon {
 
 impl SequencerDaemon {
     pub fn new(
-        ppm: Arc<Mutex<PlayerManager>>
+        ppm: Arc<Mutex<PlayerManager>>,
+        rc: Arc<Mutex<RestClient>>
     ) -> SequencerDaemon {
         SequencerDaemon {
             prosc_player_manager: ppm,
+            rest_client: rc,
             bpm: Arc::new(Mutex::new(Cell::new(120))),
             tick_interval_ms: 2,
             beat_counter: Arc::new(Mutex::new(Cell::new(0.0))),
@@ -45,11 +49,11 @@ impl SequencerDaemon {
                 let elapsed = now.time() - this.lock().unwrap().last_tick_time.lock().unwrap()
                     .get()
                     .time();
-                let ms_elapsed = crate::model::midi_utils::ms_to_beats(
+
+                let beats_elapsed = crate::model::midi_utils::ms_to_beats(
                     elapsed.num_milliseconds(),
                     this.lock().unwrap().bpm.lock().unwrap().get().clone()
                 ) ;
-
 
                 {
                     // Only order note playing if not silenced
@@ -67,8 +71,14 @@ impl SequencerDaemon {
                     }
                 }
 
-                // TODO: Midi sync according to beat
-                this.lock().unwrap().beat_counter.lock().unwrap().update(| v| v + ms_elapsed);
+                this.lock().unwrap().beat_counter.lock().unwrap().update(| v| v + beats_elapsed);
+
+                // Send sync every 1/24 beat as specified by midi protocol
+                if this.lock().unwrap().beat_counter.lock().unwrap().get() >= 1.0 / 24.0 {
+                    this.lock().unwrap().rest_client.lock().unwrap().sync_midi();
+                    this.lock().unwrap().beat_counter.lock().unwrap().set(0.0);
+                }
+
                 this.lock().unwrap().last_tick_time.lock().unwrap().replace(now);
                 sleep(time::Duration::from_millis(this.lock().unwrap().tick_interval_ms));
             }

@@ -22,7 +22,7 @@ pub fn main() {
     let client_ref = Arc::new(Mutex::new(client));
     let prosc_manager = PlayerManager::new(client_ref.clone());
     let pm_ref = Arc::new(Mutex::new(prosc_manager));
-    let daemon = SequencerDaemon::new(pm_ref.clone());
+    let daemon = SequencerDaemon::new(pm_ref.clone(), client_ref.clone());
     let daemon_ref = Arc::new(Mutex::new(daemon));
 
     {

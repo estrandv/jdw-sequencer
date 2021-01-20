@@ -18,6 +18,11 @@ impl RestClient {
         }
     }
 
+    // TODO: Contact midi server
+    pub fn sync_midi(&self) -> Result<(), reqwest::Error> {
+        Ok(())
+    }
+
     #[instrument] // Enables extra logging for things that can go wrong in-call.
     pub fn post_prosc_samples(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
 
