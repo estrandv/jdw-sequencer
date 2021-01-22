@@ -82,28 +82,6 @@ impl SequencePlayer {
 
         }
 
-        /*
-            Since we gradually remove notes from the current set as they are played
-                and notes are played based on their relative position to the previous one,
-                we need a final "ghost note" to be played at the end time of the second last
-                one for is_finished() to work correctly.
-
-                TODO: This statement can be simplified
-         */
-        match self.queued_notes.lock().unwrap().clone().into_inner().last() {
-            Some(_) => {
-                let new_note = SequencerNote {
-                    tone: 0.0,
-                    amplitude: 0.0,
-                    sustain: 0.0,
-                    start_beat: beat
-                };
-
-                self.current_notes.lock().unwrap().get_mut().push(new_note);
-            },
-            None => ()
-        }
-
         self.loop_start_time.set(at_time);
     }
 

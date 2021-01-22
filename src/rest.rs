@@ -23,7 +23,7 @@ impl RestClient {
         Ok(())
     }
 
-    #[instrument] // Enables extra logging for things that can go wrong in-call.
+    // #[instrument] // Enables extra logging for things that can go wrong in-call.
     pub fn post_prosc_samples(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
 
         for note in notes {
@@ -50,7 +50,7 @@ impl RestClient {
 
             let json = serde_json::json!(message);
 
-            println!("Posting to {}, Message: {}", url.clone(), &json);
+            //println!("Posting to {}, Message: {}", url.clone(), &json);
 
             self.r_client.post(&url)
                 .json(&json)
@@ -61,7 +61,7 @@ impl RestClient {
 
     }
 
-    #[instrument] // Enables extra logging for things that can go wrong in-call.
+    // #[instrument] // Enables extra logging for things that can go wrong in-call.
     pub fn post_prosc_notes(&self, output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
 
         let url = "http://localhost:5000/impl/s_new";
@@ -79,7 +79,7 @@ impl RestClient {
 
             let json = serde_json::json!(message);
 
-            println!("Posting to {}, Message: {}", &url, &json);
+            //println!("Posting to {}, Message: {}", &url, &json);
 
             self.r_client.post(url)
                 .json(&json)

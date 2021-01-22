@@ -5,6 +5,7 @@ use crate::sequence_player::{SequencePlayer, PlayerTarget};
 use chrono::{DateTime, Utc};
 use crate::model::rest_input::RestInputNote;
 use std::cell::{Cell, RefCell};
+use std::thread;
 
 /*
     Organizer for sequence players targeting PROSC.
@@ -26,31 +27,29 @@ impl PlayerManager {
     }
 
     pub fn force_reset(&self, time: DateTime<Utc>) {
+
+        // Execute each reset in a thread since this is a millisecond-critical operation
+        let mut handles = Vec::with_capacity(self.sequence_players.lock().unwrap().len() + 1);
+
         for (_, player) in self.sequence_players.lock().unwrap().iter() {
-            player.lock().unwrap().shift_queue(time);
+            let pref = player.clone();
+            handles.push(thread::spawn(move || {
+                pref.lock().unwrap().shift_queue(time);
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
         }
     }
 
-    // Scan for upcoming notes in all players and send to PROSC where appropriate
+    // Scan for upcoming notes in all players and send to REST targets where appropriate
     pub fn play_next(&self, time: DateTime<Utc>, bpm: i32) {
 
-        let all_finished = self.sequence_players.lock().unwrap().values().into_iter()
-            .all(|player| player.lock().unwrap().is_finished());
-
-        if all_finished {
-
-            self.force_reset(time);
-
-            // Sorta cultish. Since it should take a tick before we trigger the next note... I dunno,
-            // the important thing to note is that this is an experiment.
-            return;
-        }
-
-
-        for (_, player) in self.sequence_players.lock().unwrap().iter() {
+        for (name, player) in self.sequence_players.lock().unwrap().iter() {
             let notes_on_time = player.lock().unwrap().get_next(time, bpm);
             if notes_on_time.len() > 1 {
-                println!("WARNING: Note overflow!");
+                println!("WARNING: Note overflow in {} {:?}", name, notes_on_time.clone());
             }
             if !notes_on_time.is_empty() {
 
@@ -74,6 +73,13 @@ impl PlayerManager {
             }
         }
 
+        // Immediately reset the counter if all players have finished their playing set
+        let all_finished = self.sequence_players.lock().unwrap().values().into_iter()
+            .all(|player| player.lock().unwrap().is_finished());
+
+        if all_finished {
+            self.force_reset(time);
+        }
 
     }
 
