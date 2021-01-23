@@ -96,7 +96,7 @@ impl PlayerManager {
             );
         }
 
-        println!("Queue called for {}", alias);
+        println!("Queue called for {}: {:?}", alias, notes);
         self.sequence_players.lock().unwrap().get(alias).unwrap().lock().unwrap()
             .queue(notes);
 

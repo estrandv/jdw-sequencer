@@ -66,6 +66,7 @@ impl SequencePlayer {
      */
     pub fn shift_queue(&self, at_time: DateTime<Utc>) {
         self.current_notes.lock().unwrap().replace(Vec::new());
+        self.loop_start_time.set(at_time);
 
         let mut beat: f32 = 0.0;
         for note in self.queued_notes.lock().unwrap().clone().into_inner() {
@@ -82,7 +83,29 @@ impl SequencePlayer {
 
         }
 
-        self.loop_start_time.set(at_time);
+        /*
+            Since we transform reserved time (effectively end time) to start time when shuffling
+            and then use start time to trigger everything, the very last note will not get its
+            play time unless we also add a dummy note at the end. This way, the sequencer will reach
+            the end note, play it, empty itself and then reset, as opposed to resetting as soon as
+            the second last tone is played.
+
+            TODO: I keep returning to this as a bug source but I think it works just fine.
+                HOWEVER since this SEEMS to be the issue when in actuality it's something else
+                I guess we need to up our test game a bit...
+         */
+
+        if !self.current_notes.lock().unwrap().clone().into_inner().is_empty() {
+            self.current_notes.lock().unwrap().get_mut().push(
+                SequencerNote {
+                    tone: 0.0,
+                    amplitude: 0.0,
+                    sustain: 0.0,
+                    start_beat: beat
+                }
+            );
+        }
+
     }
 
     pub fn get_next(&self, at_time: DateTime<Utc>, bpm: i32) -> Vec<SequencerNote> {
@@ -98,9 +121,7 @@ impl SequencePlayer {
             .into_iter()
             .filter(|note| {
                 let start = beats_to_milli_seconds(note.start_beat, bpm);
-                // TODO: The i64 conversion might cause a nasty "everything at once" bug
                 let note_time = self.loop_start_time.get() + Duration::milliseconds(start);
-                // Not 100% sure .time() is what we're looking for as "isBefore" replacement
                 note_time.time() <= at_time.time()
             }).collect::<Vec<SequencerNote>>();
 
