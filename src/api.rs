@@ -30,7 +30,7 @@ pub fn reset_queue(
     daemon: State<Arc<Mutex<SequencerDaemon>>>
 ) {
     daemon.lock().unwrap().silenced(false);
-    player_manager.lock().unwrap().force_reset(chrono::offset::Utc::now());
+    player_manager.lock().unwrap().force_reset();
 }
 
 /*
