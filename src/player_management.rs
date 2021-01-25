@@ -61,7 +61,7 @@ impl PlayerManager {
                 // Since the response doesn't really matter to the sending thread, we just leave the send
                 // in a thread and move on...
                 thread::spawn(move || {
-                    match thread_player.player_target {
+                    match thread_player.lock().unwrap().player_target {
                         PlayerTarget::PROSC => {
                             thread_client.lock().unwrap()
                                 .post_prosc_notes( &output, notes_on_time.clone());
@@ -71,7 +71,7 @@ impl PlayerManager {
                                 .post_midi_notes( &output, notes_on_time.clone());
                         },
                         PlayerTarget::PROSC_SAMPLE => {
-                            thread_client.unwrap()
+                            thread_client.lock().unwrap()
                                 .post_prosc_samples( &output, notes_on_time.clone());
                         },
                     }
