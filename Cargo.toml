@@ -1,5 +1,5 @@
 [package]
-name = "jdw-sequencer"
+name = "jdw-sequencer-neo"
 version = "0.1.0"
 authors = ["Emstrevk <emil.strandvik@protonmail.com>"]
 edition = "2018"
@@ -16,7 +16,7 @@ futures = "0.3.1"
 env_logger = "*"
 log = "0.4"
 
-reqwest = { version = "0.10", features = ["json", "blocking"] } # Added the blocking feature because async in threads is a mess
+reqwest = { version = "0.11", features = ["json", "blocking"] }
 tracing = "0.1.5"
 tracing-futures = "0.2.4"
 

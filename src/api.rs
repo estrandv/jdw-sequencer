@@ -2,35 +2,24 @@
 
 use rocket_contrib::json::Json;
 use rocket::State;
-use std::sync::Arc;
+use std::{cell::RefCell, println, sync::Arc};
 use std::sync::Mutex;
-use crate::model::rest_input::RestInputNote;
-use crate::player_management::PlayerManager;
-use crate::daemon::SequencerDaemon;
-use crate::sequence_player::PlayerTarget;
+
+use crate::model::{RestInputNote, SequencerQueueData};
 
 #[get("/bpm/<bpm>")]
 pub fn set_bpm(
-    daemon: State<Arc<Mutex<SequencerDaemon>>>,
-    bpm: i32
+    bpm: i32,
+    current_bpm: State<Arc<Mutex<RefCell<i32>>>>
 ) {
-    daemon.lock().unwrap().bpm(bpm);
-}
-
-#[get("/stop")]
-pub fn stop(
-    daemon: State<Arc<Mutex<SequencerDaemon>>>
-) {
-    daemon.lock().unwrap().silenced(true);
+    current_bpm.lock().unwrap().replace(bpm);
 }
 
 #[get("/queue/reset")]
 pub fn reset_queue(
-    player_manager: State<Arc<Mutex<PlayerManager>>>,
-    daemon: State<Arc<Mutex<SequencerDaemon>>>
+    reset_handle: State<Arc<Mutex<RefCell<bool>>>>
 ) {
-    daemon.lock().unwrap().silenced(false);
-    player_manager.lock().unwrap().force_reset();
+    reset_handle.lock().unwrap().replace(true);
 }
 
 /*
@@ -43,9 +32,18 @@ pub fn queue_prosc(
     output_name: String,
     alias: String,
     notes: Json<Vec<RestInputNote>>,
-    player_manager: State<Arc<Mutex<PlayerManager>>>
+    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
-    player_manager.lock().unwrap().queue_notes(PlayerTarget::PROSC, &output_name, &alias, notes.into_inner());
+
+    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+ 
+    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+        id: alias,
+        target_type: crate::model::OutputTargetType::Prosc,
+        instrument_id: output_name,
+        queue: RefCell::new(notes.into_inner())
+    }); 
+
 }
 
 #[post("/queue/prosc_sample/<output_name>/<alias>", format="json", data="<notes>")]
@@ -53,9 +51,19 @@ pub fn queue_prosc_sample(
     output_name: String,
     alias: String,
     notes: Json<Vec<RestInputNote>>,
-    player_manager: State<Arc<Mutex<PlayerManager>>>
+    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
-    player_manager.lock().unwrap().queue_notes(PlayerTarget::PROSC_SAMPLE, &output_name, &alias, notes.into_inner());
+
+
+    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+ 
+    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+        id: alias,
+        target_type: crate::model::OutputTargetType::ProscSample,
+        instrument_id: output_name,
+        queue: RefCell::new(notes.into_inner())
+    }); 
+
 }
 
 #[post("/queue/midi/<output_name>/<alias>", format="json", data="<notes>")]
@@ -63,19 +71,15 @@ pub fn queue_midi(
     output_name: String,
     alias: String,
     notes: Json<Vec<RestInputNote>>,
-    player_manager: State<Arc<Mutex<PlayerManager>>>
+    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
-    player_manager.lock().unwrap().queue_notes(PlayerTarget::MIDI, &output_name, &alias, notes.into_inner());
-}
-
-#[get("/queue/test/<output_name>")]
-pub fn test_queue(
-    output_name:String,
-    prosc_manager: State<Arc<Mutex<PlayerManager>>>
-) {
-    prosc_manager.lock().unwrap()
-        .queue_notes(PlayerTarget::PROSC, &output_name, "testQueue", vec!(
-            RestInputNote::new(440.0, 1.0, 0.5, 1.0),
-            RestInputNote::new(640.0, 2.0, 1.0, 1.0),
-        ));
+ 
+    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+ 
+    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+        id: alias,
+        target_type: crate::model::OutputTargetType::MIDI,
+        instrument_id: output_name,
+        queue: RefCell::new(notes.into_inner())
+    });    
 }
