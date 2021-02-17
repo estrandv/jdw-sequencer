@@ -57,7 +57,6 @@ impl Sequence {
             let ms = midi_utils::beats_to_milli_seconds(note.reserved_time, bpm);
             iter_time = iter_time + Duration::milliseconds(ms);
 
-            current_beat += note.reserved_time;
         }
 
         // To represent the final tone "ringing out" before the next loop starts, we add a final

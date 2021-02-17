@@ -1,9 +1,9 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
-use std::{any::Any, borrow::Borrow, cell::RefCell, println, thread};
+use std::{cell::RefCell, println, thread};
 
 use chrono::{DateTime, Utc};
-use external_calls::{SNewMessage, post_midi_notes};
+use external_calls::SNewMessage;
 use model::{OutputTargetType, Sequence, SequencerMetaData, SequencerQueueData};
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +18,6 @@ mod external_calls;
 const TICK_TIME_MS: u64 = 1;
 
 fn main() {
-    println!("Hello, world!");
 
     let bpm = Arc::new(Mutex::new(RefCell::new(120)));
     let queue_data: Arc<Mutex<RefCell<Vec<SequencerQueueData>>>> = Arc::new(Mutex::new(RefCell::new(Vec::new()))); 

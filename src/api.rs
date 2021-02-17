@@ -2,7 +2,7 @@
 
 use rocket_contrib::json::Json;
 use rocket::State;
-use std::{cell::RefCell, println, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 use std::sync::Mutex;
 
 use crate::model::{RestInputNote, SequencerQueueData};
