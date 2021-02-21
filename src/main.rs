@@ -56,6 +56,11 @@ fn main_loop(
 
         loop {
 
+            // Force reset means dump everything
+            if force_reset.lock().unwrap().clone().into_inner() {
+                state = Vec::new();
+            }
+
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
 
             let this_loop_time = chrono::offset::Utc::now();
@@ -107,14 +112,13 @@ fn main_loop(
 
             }
 
-
-            if !collected_synth.is_empty() {
-                let _res = external_calls::post_prosc_notes(collected_synth);
-            }
             if !collected_sample.is_empty() {
                 let _res = external_calls::post_prosc_samples(collected_sample);
             }
 
+            if !collected_synth.is_empty() {
+                let _res = external_calls::post_prosc_notes(collected_synth);
+            }
 
             // TODO: Is this perhaps too clumsy? Can the queue_data type be something lighter? 
             for queue in queue_data.lock().unwrap().clone().into_inner().iter() {
@@ -137,6 +141,7 @@ fn main_loop(
                     }
                  }
             }
+
 
             // Replace all now empty active sequences with their queue counterparts (resetting)
             let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
