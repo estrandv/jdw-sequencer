@@ -72,7 +72,6 @@ fn main_loop(
 
             sync_counter += elapsed_beats;
 
-
             // MIDI Sync allegedly happens 24 times per beat 
             if sync_counter > ( 1.0 / 24.0 ) {
                 let _res = external_calls::sync_midi();
@@ -90,7 +89,7 @@ fn main_loop(
                 let mut on_time = meta_data.active_sequence.get_mut().pop_at_time(this_loop_time.clone());
 
                 // Currently not posting silent notes for performance reasons 
-                on_time.retain(|e| e.amplitude > 0.0);
+                on_time.retain(|e| e.clone().get_attr("amp").unwrap_or(0.0) > 0.0);
 
                 if !on_time.is_empty() {
 
@@ -99,13 +98,13 @@ fn main_loop(
                     println!("id:{} -> {}", meta_data.queue.borrow().id, &instrument_id);
                     match meta_data.queue.borrow().target_type {
                         OutputTargetType::Prosc => {
-                            on_time.iter().map(|e| e.convert(&instrument_id)).for_each(|e| collected_synth.push(e.clone()));
+                            on_time.iter().map(|e| e.convert()).for_each(|e| collected_synth.push(e.clone()));
                         },
                         OutputTargetType::MIDI => {
                             let _result = external_calls::post_midi_notes(&instrument_id, on_time);
                         },
                         OutputTargetType::ProscSample => {
-                            on_time.iter().map(|e| e.convert(&instrument_id)).for_each(|e| collected_sample.push(e.clone()));
+                            on_time.iter().map(|e| e.convert()).for_each(|e| collected_sample.push(e.clone()));
                         },
                     }
                 }

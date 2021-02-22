@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::midi_utils;
+use crate::{external_calls::SNewMessage, midi_utils};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RestInputNote {
@@ -15,12 +15,19 @@ pub struct RestInputNote {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SequencerNote {
-    pub tone: f32,
-    pub amplitude: f32,
-    pub sustain: f32,
+    pub message: Option<SNewMessage>,
     pub start_time: chrono::DateTime<Utc>,
+}
+
+impl SequencerNote {
+    pub fn get_attr(self, key: &str) -> Option<f32> {
+        match self.message {
+            Some(m) => m.get(key),
+            None => Option::None
+        }
+    }
 }
 
 /*
@@ -32,7 +39,6 @@ pub struct Sequence{
 
 impl Sequence {
 
-
     pub fn new_empty() -> Self {
         Sequence {notes: Vec::new()}
     }
@@ -40,7 +46,7 @@ impl Sequence {
     // RestInputNote arrives in relative time format
     // We create a sequence that notes the expected play times in real time units
     // This way note play time is independent from program performance 
-    pub fn new(notes: Vec<RestInputNote>, start_time: DateTime<Utc>, bpm: i32) -> Self {
+    pub fn new(notes: Vec<SNewMessage>, start_time: DateTime<Utc>, bpm: i32) -> Self {
         
         let mut iter_time = start_time.clone();
 
@@ -48,13 +54,11 @@ impl Sequence {
 
         for note in notes.iter() {
             sequencer_notes.push(SequencerNote {
-                tone: note.tone.clone(),
-                amplitude: note.amplitude.clone(),
-                sustain: note.sustain_time.clone(),
+                message: Option::Some(note.clone()),
                 start_time: iter_time.clone()
             });
 
-            let ms = midi_utils::beats_to_milli_seconds(note.reserved_time, bpm);
+            let ms = midi_utils::beats_to_milli_seconds(note.clone().get("reserved_time").unwrap_or(0.0), bpm);
             iter_time = iter_time + Duration::milliseconds(ms);
 
         }
@@ -62,9 +66,7 @@ impl Sequence {
         // To represent the final tone "ringing out" before the next loop starts, we add a final
         // silent note. 
         sequencer_notes.push(SequencerNote {
-                tone: 0.0,
-                amplitude: 0.0,
-                sustain: 0.0,
+                message: Option::None,
                 start_time: iter_time.clone()
         });
 
@@ -104,7 +106,7 @@ pub struct SequencerQueueData {
     pub id: String, // Unique id, e.g. "mydrums" - when API queue() is called, this is the id referenced 
     pub target_type: OutputTargetType, // Where the sequence plays to. Determines what rest endpoint is called when playing notes. 
     pub instrument_id: String, // Id used to identify instrument at target_type 
-    pub queue: RefCell<Vec<RestInputNote>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call. 
+    pub queue: RefCell<Vec<SNewMessage>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call. 
 }
 
 pub struct SequencerMetaData {
@@ -116,7 +118,7 @@ mod tests {
 
     use chrono::Duration;
 
-    use super::{RestInputNote, Sequence};
+    use super::{SNewMessage, Sequence};
 
 
     #[test]

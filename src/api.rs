@@ -5,6 +5,7 @@ use rocket::State;
 use std::{cell::RefCell, sync::Arc};
 use std::sync::Mutex;
 
+use crate::external_calls::SNewMessage;
 use crate::model::{RestInputNote, SequencerQueueData};
 
 #[get("/bpm/<bpm>")]
@@ -31,7 +32,7 @@ pub fn reset_queue(
 pub fn queue_prosc(
     output_name: String,
     alias: String,
-    notes: Json<Vec<RestInputNote>>,
+    notes: Json<Vec<SNewMessage>>,
     queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
 
@@ -50,10 +51,9 @@ pub fn queue_prosc(
 pub fn queue_prosc_sample(
     output_name: String,
     alias: String,
-    notes: Json<Vec<RestInputNote>>,
+    notes: Json<Vec<SNewMessage>>,
     queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
-
 
     queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
  
@@ -70,7 +70,7 @@ pub fn queue_prosc_sample(
 pub fn queue_midi(
     output_name: String,
     alias: String,
-    notes: Json<Vec<RestInputNote>>,
+    notes: Json<Vec<SNewMessage>>,
     queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
 ) {
  

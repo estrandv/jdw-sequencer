@@ -20,6 +20,22 @@ struct  MIDIMessage {
     amplitude: f32,
 }
 
+impl SNewMessage {
+
+    pub fn get(self, key: &str) -> Option<f32> {
+        match self.values.iter().find(|v| v.name == key.to_string()) {
+            Some(value) => Option::Some(value.value),
+            None => Option::None
+        }
+    }
+
+    // common attributes are tone, amplitude, sustain_time, reserved_time
+    // These are typically mapped as "amp", "sus", "freq" etc however.
+    // Ideally we should not need to do any conversion, but there are attributes 
+    // That have no use to external callers, like "reserved_time".
+    // Let's start with overinclusion and then move towards separation...
+}
+
 
 // TODO: Contact midi server
 pub fn sync_midi() -> Result<(), reqwest::Error> {
@@ -27,15 +43,8 @@ pub fn sync_midi() -> Result<(), reqwest::Error> {
 }
 
 impl SequencerNote {
-    pub fn convert(&self, output_key: &str) -> SNewMessage {
-        SNewMessage {
-            synth: output_key.to_string(),
-            values: vec!(
-                OSCValueField{name: "amp".to_string(), value: self.amplitude},
-                OSCValueField{name: "sus".to_string(), value: self.sustain},
-                OSCValueField{name: "freq".to_string(), value: self.tone as f32},
-            )
-        }
+    pub fn convert(&self) -> SNewMessage {
+        self.message.clone().unwrap() // TODO: Dangerous optional, also freq vs tone
     }
 }
 
@@ -91,21 +100,32 @@ pub fn post_prosc_notes(notes: Vec<SNewMessage>) -> Result<(), reqwest::Error> {
 //#[instrument] // Enables extra logging for things that can go wrong in-call.
 pub fn post_midi_notes(output_key: &str, notes: Vec<SequencerNote>) -> Result<(), reqwest::Error> {
 
+
+    // TODO: Should ouput message without conversion, but we need to update the MIDI server first
     let url = format!("http://localhost:11000/play/{}", output_key);
 
     for note in notes {
 
-        let message = MIDIMessage{
-            tone: note.tone,
-            sustain_time: note.sustain,
-            amplitude: note.amplitude
-        };
+        match note.message {
+            Some(m) => {
 
-        let json = serde_json::json!(message);
+                let message = MIDIMessage{
+                    tone: m.clone().get("tone").unwrap_or(0.0),
+                    sustain_time: m.clone().get("sus").unwrap_or(0.0),
+                    amplitude: m.clone().get("amp").unwrap_or(0.0)
+                };
 
-        reqwest::blocking::Client::new().post(&url)
-            .json(&json)
-            .send()?;
+                let json = serde_json::json!(message);
+
+
+                reqwest::blocking::Client::new().post(&url)
+                    .json(&json)
+                    .send()?;
+            },
+            None => {}
+        }
+
+
     }
 
     Ok(())
