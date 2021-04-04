@@ -5,8 +5,8 @@ use rocket::State;
 use std::{cell::RefCell, sync::Arc};
 use std::sync::Mutex;
 
-use crate::external_calls::SNewMessage;
-use crate::model::{RestInputNote, SequencerQueueData};
+use crate::{StateHandle, external_calls::SNewMessage, model::QueueMetaData};
+use crate::model::SequencerQueueData;
 
 #[get("/bpm/<bpm>")]
 pub fn set_bpm(
@@ -18,9 +18,16 @@ pub fn set_bpm(
 
 #[get("/queue/reset")]
 pub fn reset_queue(
-    reset_handle: State<Arc<Mutex<RefCell<bool>>>>
+    state_handle: State<Arc<Mutex<StateHandle>>>
 ) {
-    reset_handle.lock().unwrap().replace(true);
+    state_handle.lock().unwrap().reset.replace(true);
+}
+
+#[get("/stop")]
+pub fn stop(
+    state_handle: State<Arc<Mutex<StateHandle>>>
+) {
+    state_handle.lock().unwrap().hard_stop.replace(true);
 }
 
 /*
@@ -33,17 +40,18 @@ pub fn queue_prosc(
     output_name: String,
     alias: String,
     notes: Json<Vec<SNewMessage>>,
-    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
+    queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
 
-    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
  
-    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
         id: alias,
         target_type: crate::model::OutputTargetType::Prosc,
         instrument_id: output_name,
         queue: RefCell::new(notes.into_inner())
     }); 
+    queue_data.lock().unwrap().updated.replace(true);
 
 }
 
@@ -52,17 +60,18 @@ pub fn queue_prosc_sample(
     output_name: String,
     alias: String,
     notes: Json<Vec<SNewMessage>>,
-    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
+    queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
 
-    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
  
-    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
         id: alias,
         target_type: crate::model::OutputTargetType::ProscSample,
         instrument_id: output_name,
         queue: RefCell::new(notes.into_inner())
     }); 
+    queue_data.lock().unwrap().updated.replace(true);
 
 }
 
@@ -71,15 +80,17 @@ pub fn queue_midi(
     output_name: String,
     alias: String,
     notes: Json<Vec<SNewMessage>>,
-    queue_data: State<Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>>,
+    queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
  
-    queue_data.lock().unwrap().borrow_mut().retain(|e| *e.id != alias);
+    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
  
-    queue_data.lock().unwrap().borrow_mut().push(SequencerQueueData {
+    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
         id: alias,
         target_type: crate::model::OutputTargetType::MIDI,
         instrument_id: output_name,
         queue: RefCell::new(notes.into_inner())
     });    
+
+    queue_data.lock().unwrap().updated.replace(true);
 }

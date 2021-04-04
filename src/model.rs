@@ -109,6 +109,11 @@ pub struct SequencerQueueData {
     pub queue: RefCell<Vec<SNewMessage>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call. 
 }
 
+pub struct QueueMetaData {
+    pub updated: RefCell<bool>,
+    pub queue: RefCell<Vec<SequencerQueueData>>,
+}
+
 pub struct SequencerMetaData {
     pub queue: RefCell<SequencerQueueData>, 
     pub active_sequence: RefCell<Sequence>,

@@ -4,7 +4,7 @@ use std::{cell::RefCell, println, thread};
 
 use chrono::{DateTime, Utc};
 use external_calls::SNewMessage;
-use model::{OutputTargetType, Sequence, SequencerMetaData, SequencerQueueData};
+use model::{OutputTargetType, QueueMetaData, Sequence, SequencerMetaData, SequencerQueueData};
 use std::sync::{Arc, Mutex};
 
 #[macro_use]
@@ -17,15 +17,21 @@ mod external_calls;
 
 const TICK_TIME_MS: u64 = 1;
 
+pub struct StateHandle {
+    reset: RefCell<bool>,
+    hard_stop: RefCell<bool>,
+}
+
 fn main() {
 
     let bpm = Arc::new(Mutex::new(RefCell::new(120)));
-    let queue_data: Arc<Mutex<RefCell<Vec<SequencerQueueData>>>> = Arc::new(Mutex::new(RefCell::new(Vec::new()))); 
-    let reset_handle: Arc<Mutex<RefCell<bool>>> = Arc::new(Mutex::new(RefCell::new(false)));
+    let queue_data: Arc<Mutex<QueueMetaData>> = Arc::new(Mutex::new(QueueMetaData {updated: RefCell::new(false), queue: RefCell::new(Vec::new())})); 
+    
 
+    let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle{reset: RefCell::new(false), hard_stop: RefCell::new(false)}));
     
     // Get the main loop chugging before initializing the API
-    main_loop(bpm.clone(), queue_data.clone(), reset_handle.clone());
+    main_loop(bpm.clone(), queue_data.clone(), state_handle.clone());
 
     rocket::ignite()
         .mount("/", rocket::routes![
@@ -33,18 +39,19 @@ fn main() {
             api::queue_midi,
             api::queue_prosc,
             api::queue_prosc_sample,
-            api::reset_queue
+            api::reset_queue,
+            api::stop
         ])
         .manage(bpm)
         .manage(queue_data)
-        .manage(reset_handle)
+        .manage(state_handle)
         .launch();
 }
 
 fn main_loop(
     bpm: Arc<Mutex<RefCell<i32>>>, // Modified live via API
-    queue_data: Arc<Mutex<RefCell<Vec<SequencerQueueData>>>>, // Modified live via API
-    force_reset: Arc<Mutex<RefCell<bool>>>, // Modified live via API 
+    queue_data: Arc<Mutex<QueueMetaData>>, // Modified live via API
+    state_handle: Arc<Mutex<StateHandle>>, // Modified live via API 
 ) {
 
     thread::spawn(move || {
@@ -56,9 +63,17 @@ fn main_loop(
 
         loop {
 
-            // Force reset means dump everything
-            if force_reset.lock().unwrap().clone().into_inner() {
-                state = Vec::new();
+
+            {
+                let state_handle_lock = state_handle.lock().unwrap();
+                // Force reset means dump everything
+                if state_handle_lock.reset.clone().into_inner() || state_handle_lock.hard_stop.clone().into_inner() {
+                    state = Vec::new();
+                }
+
+                if state_handle_lock.hard_stop.clone().into_inner() {
+                    queue_data.lock().unwrap().queue.replace(Vec::new());
+                }
             }
 
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
@@ -120,31 +135,34 @@ fn main_loop(
             }
 
             // TODO: Is this perhaps too clumsy? Can the queue_data type be something lighter? 
-            for queue in queue_data.lock().unwrap().clone().into_inner().iter() {
-                 let existing = state.iter().find(|data| data.queue.borrow().id == queue.id);
+            if queue_data.lock().unwrap().updated.clone().into_inner() {
+                for queue in queue_data.lock().unwrap().queue.clone().into_inner().iter() {
+                     let existing = state.iter().find(|data| data.queue.borrow().id == queue.id);
 
-                 // If a queue with the same id exists, we change the queue data according to
-                 // request. If not, we create new queue data with an empty sequence to be
-                 // populated the next time the queue replaces current. 
-                 match existing {
-                    Some(old_data) => {
-                        old_data.queue.replace(queue.clone());
-                    },
-                    None => {
-                        let new_data = SequencerMetaData {
-                            queue: RefCell::new(queue.clone()),
-                            active_sequence: RefCell::new(Sequence::new_empty()),
-                        };
+                     // If a queue with the same id exists, we change the queue data according to
+                     // request. If not, we create new queue data with an empty sequence to be
+                     // populated the next time the queue replaces current. 
+                     match existing {
+                        Some(old_data) => {
+                            old_data.queue.replace(queue.clone());
+                        },
+                        None => {
+                            let new_data = SequencerMetaData {
+                                queue: RefCell::new(queue.clone()),
+                                active_sequence: RefCell::new(Sequence::new_empty()),
+                            };
 
-                        state.push(new_data);
-                    }
-                 }
+                            state.push(new_data);
+                        }
+                     }
+                }
+
+                queue_data.lock().unwrap().updated.replace(false);
             }
-
 
             // Replace all now empty active sequences with their queue counterparts (resetting)
             let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
-            if all_finished || force_reset.lock().unwrap().clone().into_inner() {
+            if all_finished || state_handle.lock().unwrap().reset.clone().into_inner() {
                 for data in state.iter() {
                     if !data.queue.borrow().queue.borrow().is_empty() {
                         data.active_sequence.replace(Sequence::new(data.queue.borrow().queue.clone().into_inner(), this_loop_time, current_bpm.clone()));
@@ -154,7 +172,10 @@ fn main_loop(
             }
 
             // Reset will now be handled and can fall back to false
-            force_reset.lock().unwrap().replace(false);
+            {
+                state_handle.lock().unwrap().reset.replace(false);
+                state_handle.lock().unwrap().hard_stop.replace(false);
+            }
 
             std::thread::sleep(std::time::Duration::from_millis(TICK_TIME_MS));
 
