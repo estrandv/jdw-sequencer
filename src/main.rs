@@ -134,8 +134,8 @@ fn main_loop(
                 let _res = external_calls::post_prosc_notes(collected_synth);
             }
 
-            // TODO: Is this perhaps too clumsy? Can the queue_data type be something lighter? 
-            if queue_data.lock().unwrap().updated.clone().into_inner() {
+            // Only push queue into current state if needed  
+            if queue_data.lock().unwrap().updated.clone().into_inner() || state.is_empty() {
                 for queue in queue_data.lock().unwrap().queue.clone().into_inner().iter() {
                      let existing = state.iter().find(|data| data.queue.borrow().id == queue.id);
 
@@ -161,7 +161,7 @@ fn main_loop(
             }
 
             // Replace all now empty active sequences with their queue counterparts (resetting)
-            let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
+            let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished()) || state.is_empty();
             if all_finished || state_handle.lock().unwrap().reset.clone().into_inner() {
                 for data in state.iter() {
                     if !data.queue.borrow().queue.borrow().is_empty() {
