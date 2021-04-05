@@ -16,6 +16,7 @@ mod api;
 mod external_calls;
 
 const TICK_TIME_MS: u64 = 1;
+const IDLE_TIME_MS: u64 = 500;
 
 pub struct StateHandle {
     reset: RefCell<bool>,
@@ -161,7 +162,7 @@ fn main_loop(
             }
 
             // Replace all now empty active sequences with their queue counterparts (resetting)
-            let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished()) || state.is_empty();
+            let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
             if all_finished || state_handle.lock().unwrap().reset.clone().into_inner() {
                 for data in state.iter() {
                     if !data.queue.borrow().queue.borrow().is_empty() {
@@ -175,6 +176,13 @@ fn main_loop(
             {
                 state_handle.lock().unwrap().reset.replace(false);
                 state_handle.lock().unwrap().hard_stop.replace(false);
+            }
+
+            if state.is_empty() {
+                // Add a little extra wait time when there are no current playing notes
+                // to prevent resource waste and allow a window in which to pass multiple initial
+                // queues
+                std::thread::sleep(std::time::Duration::from_millis(IDLE_TIME_MS))
             }
 
             std::thread::sleep(std::time::Duration::from_millis(TICK_TIME_MS));
