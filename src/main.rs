@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use model::{OutputTargetType, QueueMetaData, Sequence, SequencerMetaData, SequencerQueueData};
 use std::sync::{Arc, Mutex};
 use crate::model::SequencerNoteMessage;
+use zmq;
+use crate::zeromq::PublishingClient;
 
 #[macro_use]
 extern crate rocket;
@@ -27,19 +29,21 @@ pub struct StateHandle {
 fn main() {
 
     let bpm = Arc::new(Mutex::new(RefCell::new(120)));
-    let queue_data: Arc<Mutex<QueueMetaData>> = Arc::new(Mutex::new(QueueMetaData {updated: RefCell::new(false), queue: RefCell::new(Vec::new())})); 
-    
+    let queue_data: Arc<Mutex<QueueMetaData>> = Arc::new(Mutex::new(QueueMetaData {updated: RefCell::new(false), queue: RefCell::new(Vec::new())}));
 
     let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle{reset: RefCell::new(false), hard_stop: RefCell::new(false)}));
 
-    // Start polling for incoming zeroMQ messages
+    // Start polling for incoming ZeroMQ messages
     zeromq::poll(
         queue_data.clone(),
         state_handle.clone()
     );
 
+    // Prepare ZeroMQ outgoing client
+    let client = Arc::new(Mutex::new(PublishingClient::new()));
+
     // Get the main loop chugging before initializing the API
-    main_loop(bpm.clone(), queue_data.clone(), state_handle.clone());
+    main_loop(bpm.clone(), queue_data.clone(), state_handle.clone(), client);
 
     rocket::ignite()
         .mount("/", rocket::routes![
@@ -59,7 +63,8 @@ fn main() {
 fn main_loop(
     bpm: Arc<Mutex<RefCell<i32>>>, // Modified live via API
     queue_data: Arc<Mutex<QueueMetaData>>, // Modified live via API
-    state_handle: Arc<Mutex<StateHandle>>, // Modified live via API 
+    state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
+    publishing_client: Arc<Mutex<PublishingClient>>,
 ) {
 
     thread::spawn(move || {
@@ -116,7 +121,20 @@ fn main_loop(
                 if !on_time.is_empty() {
 
                     let instrument_id = meta_data.queue.borrow().instrument_id.clone();
-                    
+
+                    // The ZMQ posting
+                    // TODO: If performance takes a hit, we might need to consider the old way of
+                    //  adding all on_time to a collected array and posting them all at once
+                    {
+
+                        let post = |note: SequencerNoteMessage| {
+                            publishing_client.lock().unwrap().post_note(note);
+                        };
+
+                        on_time.iter().map(|e| e.convert()).for_each(|e| post(e.clone()));
+                    }
+
+                    // The REST posting, later to be removed
                     println!("id:{} -> {}", meta_data.queue.borrow().id, &instrument_id);
                     match meta_data.queue.borrow().target_type {
                         OutputTargetType::Prosc => {
