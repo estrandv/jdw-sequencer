@@ -5,8 +5,8 @@ use rocket::State;
 use std::{cell::RefCell, sync::Arc};
 use std::sync::Mutex;
 
-use crate::{StateHandle, external_calls::SNewMessage, model::QueueMetaData};
-use crate::model::SequencerQueueData;
+use crate::{StateHandle, model::QueueMetaData};
+use crate::model::{SequencerQueueData, SequencerNoteMessage};
 
 #[get("/bpm/<bpm>")]
 pub fn set_bpm(
@@ -32,25 +32,29 @@ pub fn stop(
 
 /*
     Queue notes to registered prosc output of name
-    Use the given alias; with differnet aliases you can queue several sets to the same
+    Use the given alias; with different aliases you can queue several sets to the same
         output. Queueing to the same alias will replace the notes/output for that alias on its next loop.
  */
 #[post("/queue/prosc/<output_name>/<alias>", format="json", data="<notes>")]
 pub fn queue_prosc(
     output_name: String,
     alias: String,
-    notes: Json<Vec<SNewMessage>>,
+    notes: Json<Vec<SequencerNoteMessage>>,
     queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
 
+    // Clear any pre-existing queue data of that alias
     queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
- 
+
+    // Create a new queue entry for the alias containing all the notes in the request
     queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
         id: alias,
         target_type: crate::model::OutputTargetType::Prosc,
         instrument_id: output_name,
         queue: RefCell::new(notes.into_inner())
-    }); 
+    });
+
+    // Notify the main thread that queue has been updated
     queue_data.lock().unwrap().updated.replace(true);
 
 }
@@ -59,7 +63,7 @@ pub fn queue_prosc(
 pub fn queue_prosc_sample(
     output_name: String,
     alias: String,
-    notes: Json<Vec<SNewMessage>>,
+    notes: Json<Vec<SequencerNoteMessage>>,
     queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
 
@@ -79,7 +83,7 @@ pub fn queue_prosc_sample(
 pub fn queue_midi(
     output_name: String,
     alias: String,
-    notes: Json<Vec<SNewMessage>>,
+    notes: Json<Vec<SequencerNoteMessage>>,
     queue_data: State<Arc<Mutex<QueueMetaData>>>,
 ) {
  

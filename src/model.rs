@@ -1,23 +1,34 @@
 use std::cell::RefCell;
 
-
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{external_calls::SNewMessage, midi_utils};
+use crate::{midi_utils};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct RestInputNote {
-    pub tone: f32,
-    pub amplitude: f32, 
-    pub sustain_time: f32,
-    pub reserved_time: f32,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequencerNoteMessage {
+    target: String,
+    alias: String,
+    pub time: f32,
+    args: HashMap<String, f32>,
 }
 
+impl SequencerNoteMessage {
+
+    // TODO: Getting kinda clumsy
+    pub fn get(self, key: &str) -> Option<f32> {
+        if self.args.contains_key(key) {
+            Option::Some(self.args.get(key).unwrap().clone())
+        } else {
+            Option::None
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SequencerNote {
-    pub message: Option<SNewMessage>,
+    pub message: Option<SequencerNoteMessage>,
     pub start_time: chrono::DateTime<Utc>,
 }
 
@@ -46,7 +57,7 @@ impl Sequence {
     // RestInputNote arrives in relative time format
     // We create a sequence that notes the expected play times in real time units
     // This way note play time is independent from program performance 
-    pub fn new(notes: Vec<SNewMessage>, start_time: DateTime<Utc>, bpm: i32) -> Self {
+    pub fn new(notes: Vec<SequencerNoteMessage>, start_time: DateTime<Utc>, bpm: i32) -> Self {
         
         let mut iter_time = start_time.clone();
 
@@ -58,7 +69,7 @@ impl Sequence {
                 start_time: iter_time.clone()
             });
 
-            let ms = midi_utils::beats_to_milli_seconds(note.clone().get("reserved_time").unwrap_or(0.0), bpm);
+            let ms = midi_utils::beats_to_milli_seconds(note.clone().time, bpm);
             iter_time = iter_time + Duration::milliseconds(ms);
 
         }
@@ -106,7 +117,7 @@ pub struct SequencerQueueData {
     pub id: String, // Unique id, e.g. "mydrums" - when API queue() is called, this is the id referenced 
     pub target_type: OutputTargetType, // Where the sequence plays to. Determines what rest endpoint is called when playing notes. 
     pub instrument_id: String, // Id used to identify instrument at target_type 
-    pub queue: RefCell<Vec<SNewMessage>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call. 
+    pub queue: RefCell<Vec<SequencerNoteMessage>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call.
 }
 
 pub struct QueueMetaData {
@@ -123,7 +134,7 @@ mod tests {
 
     use chrono::Duration;
 
-    use super::{SNewMessage, Sequence};
+    use super::{SequencerNoteMessage, Sequence};
 
 
     #[test]

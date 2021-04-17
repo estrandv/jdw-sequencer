@@ -3,9 +3,9 @@
 use std::{cell::RefCell, println, thread};
 
 use chrono::{DateTime, Utc};
-use external_calls::SNewMessage;
 use model::{OutputTargetType, QueueMetaData, Sequence, SequencerMetaData, SequencerQueueData};
 use std::sync::{Arc, Mutex};
+use crate::model::SequencerNoteMessage;
 
 #[macro_use]
 extern crate rocket;
@@ -16,7 +16,7 @@ mod api;
 mod external_calls;
 
 const TICK_TIME_MS: u64 = 1;
-const IDLE_TIME_MS: u64 = 500;
+const IDLE_TIME_MS: u64 = 200;
 
 pub struct StateHandle {
     reset: RefCell<bool>,
@@ -96,8 +96,8 @@ fn main_loop(
 
             last_loop_time = Some(this_loop_time.clone());
 
-            let mut collected_synth: Vec<SNewMessage> = Vec::new();
-            let mut collected_sample: Vec<SNewMessage> = Vec::new();
+            let mut collected_synth: Vec<SequencerNoteMessage> = Vec::new();
+            let mut collected_sample: Vec<SequencerNoteMessage> = Vec::new();
 
             // TODO: Explain why we collect as SNewMessage 
             for meta_data in state.iter_mut() {

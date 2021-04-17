@@ -1,39 +1,12 @@
-use crate::model::SequencerNote;
+use crate::model::{SequencerNote, SequencerNoteMessage};
 use serde::{Serialize, Deserialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SNewMessage {
-    synth: String,
-    values: Vec<OSCValueField>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct OSCValueField {
-    name: String,
-    value: f32,
-}
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct  MIDIMessage {
     tone: f32,
     sustain_time: f32, 
     amplitude: f32,
-}
-
-impl SNewMessage {
-
-    pub fn get(self, key: &str) -> Option<f32> {
-        match self.values.iter().find(|v| v.name == key.to_string()) {
-            Some(value) => Option::Some(value.value),
-            None => Option::None
-        }
-    }
-
-    // common attributes are tone, amplitude, sustain_time, reserved_time
-    // These are typically mapped as "amp", "sus", "freq" etc however.
-    // Ideally we should not need to do any conversion, but there are attributes 
-    // That have no use to external callers, like "reserved_time".
-    // Let's start with overinclusion and then move towards separation...
 }
 
 
@@ -43,14 +16,14 @@ pub fn sync_midi() -> Result<(), reqwest::Error> {
 }
 
 impl SequencerNote {
-    pub fn convert(&self) -> SNewMessage {
+    pub fn convert(&self) -> SequencerNoteMessage {
         self.message.clone().unwrap() // TODO: Dangerous optional, also freq vs tone
     }
 }
 
 
 // #[instrument] // Enables extra logging for things that can go wrong in-call.
-pub fn post_prosc_samples(notes: Vec<SNewMessage>) -> Result<(), reqwest::Error> {
+pub fn post_prosc_samples(notes: Vec<SequencerNoteMessage>) -> Result<(), reqwest::Error> {
 
 
     /*
@@ -77,7 +50,7 @@ pub fn post_prosc_samples(notes: Vec<SNewMessage>) -> Result<(), reqwest::Error>
 }
 
 // #[instrument] // Enables extra logging for things that can go wrong in-call.
-pub fn post_prosc_notes(notes: Vec<SNewMessage>) -> Result<(), reqwest::Error> {
+pub fn post_prosc_notes(notes: Vec<SequencerNoteMessage>) -> Result<(), reqwest::Error> {
 
     let url = "http://localhost:5000/impl/s_new";
 
