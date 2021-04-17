@@ -8,10 +8,10 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequencerNoteMessage {
-    target: String,
-    alias: String,
+    pub target: String,
+    pub alias: String,
     pub time: f32,
-    args: HashMap<String, f32>,
+    pub args: HashMap<String, f32>,
 }
 
 impl SequencerNoteMessage {

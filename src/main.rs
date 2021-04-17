@@ -14,6 +14,7 @@ mod model;
 pub mod midi_utils;
 mod api;
 mod external_calls;
+mod zeromq;
 
 const TICK_TIME_MS: u64 = 1;
 const IDLE_TIME_MS: u64 = 200;
@@ -30,7 +31,13 @@ fn main() {
     
 
     let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle{reset: RefCell::new(false), hard_stop: RefCell::new(false)}));
-    
+
+    // Start polling for incoming zeroMQ messages
+    zeromq::poll(
+        queue_data.clone(),
+        state_handle.clone()
+    );
+
     // Get the main loop chugging before initializing the API
     main_loop(bpm.clone(), queue_data.clone(), state_handle.clone());
 
@@ -99,7 +106,6 @@ fn main_loop(
             let mut collected_synth: Vec<SequencerNoteMessage> = Vec::new();
             let mut collected_sample: Vec<SequencerNoteMessage> = Vec::new();
 
-            // TODO: Explain why we collect as SNewMessage 
             for meta_data in state.iter_mut() {
                 
                 let mut on_time = meta_data.active_sequence.get_mut().pop_at_time(this_loop_time.clone());
