@@ -108,9 +108,6 @@ fn main_loop(
 
             last_loop_time = Some(this_loop_time.clone());
 
-            let mut collected_synth: Vec<SequencerNoteMessage> = Vec::new();
-            let mut collected_sample: Vec<SequencerNoteMessage> = Vec::new();
-
             for meta_data in state.iter_mut() {
                 
                 let mut on_time = meta_data.active_sequence.get_mut().pop_at_time(this_loop_time.clone());
@@ -119,8 +116,6 @@ fn main_loop(
                 on_time.retain(|e| e.clone().get_attr("amp").unwrap_or(0.0) > 0.0);
 
                 if !on_time.is_empty() {
-
-                    let instrument_id = meta_data.queue.borrow().instrument_id.clone();
 
                     // The ZMQ posting
                     // TODO: If performance takes a hit, we might need to consider the old way of
@@ -131,32 +126,22 @@ fn main_loop(
                             publishing_client.lock().unwrap().post_note(note);
                         };
 
-                        on_time.iter().map(|e| e.convert()).for_each(|e| post(e.clone()));
-                    }
+                        let post_sample = |note: SequencerNoteMessage| {
+                            publishing_client.lock().unwrap().post_sample(note);
+                        };
 
-                    // The REST posting, later to be removed
-                    println!("id:{} -> {}", meta_data.queue.borrow().id, &instrument_id);
-                    match meta_data.queue.borrow().target_type {
-                        OutputTargetType::Prosc => {
-                            on_time.iter().map(|e| e.convert()).for_each(|e| collected_synth.push(e.clone()));
-                        },
-                        OutputTargetType::MIDI => {
-                            let _result = external_calls::post_midi_notes(&instrument_id, on_time);
-                        },
-                        OutputTargetType::ProscSample => {
-                            on_time.iter().map(|e| e.convert()).for_each(|e| collected_sample.push(e.clone()));
-                        },
+                        match meta_data.queue.borrow().target_type {
+                            OutputTargetType::Prosc => {
+                                on_time.iter().map(|e| e.convert()).for_each(|e| post(e.clone()));
+                            },
+                            OutputTargetType::ProscSample => {
+                                on_time.iter().map(|e| e.convert()).for_each(|e| post_sample(e.clone()));
+                            },
+                            _ => {}
+                        }
+
                     }
                 }
-
-            }
-
-            if !collected_sample.is_empty() {
-                let _res = external_calls::post_prosc_samples(collected_sample);
-            }
-
-            if !collected_synth.is_empty() {
-                let _res = external_calls::post_prosc_notes(collected_synth);
             }
 
             // Only push queue into current state if needed  

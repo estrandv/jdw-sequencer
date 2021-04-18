@@ -1,6 +1,6 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{QueueMetaData, SequencerNoteMessage, SequencerQueueData};
+use crate::model::{QueueMetaData, SequencerNoteMessage, SequencerQueueData, OutputTargetType};
 use crate::StateHandle;
 use zmq::Socket;
 use std::thread;
@@ -25,6 +25,10 @@ impl PublishingClient {
     pub fn post_note(&self, note: SequencerNoteMessage) {
         self.socket.send(format!("JDW.PLAY.NOTE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
     }
+
+    pub fn post_sample(&self, note: SequencerNoteMessage) {
+        self.socket.send(format!("JDW.PLAY.SAMPLE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
+    }
 }
 
 
@@ -45,7 +49,9 @@ pub fn poll(queue_data: Arc<Mutex<QueueMetaData>>, state_handle: Arc<Mutex<State
             let json_msg = decoded_msg.get(1).unwrap_or(&"").to_string();
 
             if &msg_type == "JDW.SEQ.QUE.NOTES" {
-                update_queue(json_msg, queue_data.clone())
+                update_queue(json_msg, queue_data.clone(), OutputTargetType::Prosc)
+            } else if &msg_type == "JDW.SEQ.QUE.SAMPLES" {
+                update_queue(json_msg, queue_data.clone(), OutputTargetType::ProscSample)
             }
 
         }
@@ -53,11 +59,11 @@ pub fn poll(queue_data: Arc<Mutex<QueueMetaData>>, state_handle: Arc<Mutex<State
     });
 }
 
-fn update_queue(json_msg: String, queue_data: Arc<Mutex<QueueMetaData>>) {
+fn update_queue(json_msg: String, queue_data: Arc<Mutex<QueueMetaData>>, posting_type: OutputTargetType) {
     let payload: Vec<SequencerNoteMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
 
     if payload.is_empty() {
-        println!("WARN: Received empty or malformed JDW.SEQ.QUE.NOTES");
+        println!("WARN: Received empty or malformed JDW.SEQ.QUE.*");
     }
 
     let mut grouped_by_alias: HashMap<String, Vec<SequencerNoteMessage>> = HashMap::new();
@@ -84,7 +90,7 @@ fn update_queue(json_msg: String, queue_data: Arc<Mutex<QueueMetaData>>) {
             // Create a new queue entry for the alias containing all the notes in the request
             queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
                 id: alias,
-                target_type: crate::model::OutputTargetType::Prosc,
+                target_type: posting_type.clone(),
                 instrument_id: value.get(0).unwrap().clone().target, // TODO: instrument id will not be needed here in the future
                 queue: RefCell::new(value)
             });
