@@ -29,6 +29,10 @@ impl PublishingClient {
     pub fn post_sample(&self, note: SequencerNoteMessage) {
         self.socket.send(format!("JDW.PLAY.SAMPLE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
     }
+
+    pub fn post_midi_sync(&self) {
+        self.socket.send("JDW.MIDI.SYNC".as_bytes(), 0);
+    }
 }
 
 

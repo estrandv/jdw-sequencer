@@ -39,6 +39,10 @@ impl SequencerNote {
             None => Option::None
         }
     }
+
+    pub fn convert(&self) -> SequencerNoteMessage {
+        self.message.clone().unwrap() // TODO: Dangerous optional, also freq vs tone
+    }
 }
 
 /*

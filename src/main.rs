@@ -102,7 +102,7 @@ fn main_loop(
 
             // MIDI Sync allegedly happens 24 times per beat 
             if sync_counter > ( 1.0 / 24.0 ) {
-                let _res = external_calls::sync_midi();
+                let _res = publishing_client.lock().unwrap().post_midi_sync();
                 sync_counter = 0.0;
             }
 
