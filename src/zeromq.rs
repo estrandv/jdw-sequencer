@@ -1,6 +1,6 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{QueueMetaData, SequencerNoteMessage, SequencerQueueData, OutputTargetType};
+use crate::model::{QueueMetaData, SequencerNoteMessage, SequencerQueueData, OutputTargetType, MIDINotePlayMessage};
 use crate::StateHandle;
 use zmq::Socket;
 use std::thread;
@@ -30,8 +30,49 @@ impl PublishingClient {
         self.socket.send(format!("JDW.PLAY.SAMPLE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
     }
 
+    pub fn post_midi_note(&self, note: SequencerNoteMessage, bpm: i32) {
+        let tone: f32 = match note.args.get("freq") {
+            None => {
+                println!("WARN: Supplied MIDI note had no <freq> arg, defaulted to 44");
+                44.0
+            }
+            Some(value) => {*value}
+        };
+
+        let sus = match note.args.get("sus") {
+            None => {
+                println!("WARN: Supplied MIDI note had no <sus> arg, defaulted to 1");
+                1.0
+            }
+            Some(value) => {*value}
+        };
+
+        let sus_ms = crate::midi_utils::beats_to_milli_seconds(sus, bpm);
+
+        let amp = match note.args.get("amp") {
+            None => {
+                println!("WARN: Supplied MIDI note had no <amp> arg, defaulted to 1");
+                1.0
+            }
+            Some(value) => {*value}
+        };
+
+        let midi_note = MIDINotePlayMessage {
+            target: note.target,
+            tone: tone as i32,
+            sus_ms: sus_ms as f32,
+            amp
+        };
+
+        self.socket.send(
+            format!("JDW.MIDI.PLAY.NOTE::{}", serde_json::to_string(&midi_note).unwrap()).as_bytes(),
+            0
+        );
+
+    }
+
     pub fn post_midi_sync(&self) {
-        self.socket.send("JDW.MIDI.SYNC".as_bytes(), 0);
+        self.socket.send("JDW.MIDI.SYNC::".as_bytes(), 0);
     }
 }
 
@@ -56,6 +97,8 @@ pub fn poll(queue_data: Arc<Mutex<QueueMetaData>>, state_handle: Arc<Mutex<State
                 update_queue(json_msg, queue_data.clone(), OutputTargetType::Prosc)
             } else if &msg_type == "JDW.SEQ.QUE.SAMPLES" {
                 update_queue(json_msg, queue_data.clone(), OutputTargetType::ProscSample)
+            } else if &msg_type == "JDW.SEQ.QUE.MIDI" {
+                update_queue(json_msg, queue_data.clone(), OutputTargetType::MIDI)
             }
 
         }

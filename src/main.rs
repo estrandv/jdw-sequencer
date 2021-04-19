@@ -130,12 +130,19 @@ fn main_loop(
                             publishing_client.lock().unwrap().post_sample(note);
                         };
 
+                        let post_midi = |note: SequencerNoteMessage| {
+                            publishing_client.lock().unwrap().post_midi_note(note, bpm.lock().unwrap().clone().into_inner());
+                        };
+
                         match meta_data.queue.borrow().target_type {
                             OutputTargetType::Prosc => {
                                 on_time.iter().map(|e| e.convert()).for_each(|e| post(e.clone()));
                             },
                             OutputTargetType::ProscSample => {
                                 on_time.iter().map(|e| e.convert()).for_each(|e| post_sample(e.clone()));
+                            },
+                            OutputTargetType::MIDI => {
+                                on_time.iter().map(|e| e.convert()).for_each(|e| post_midi(e.clone()));
                             },
                             _ => {}
                         }

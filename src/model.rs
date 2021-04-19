@@ -14,6 +14,14 @@ pub struct SequencerNoteMessage {
     pub args: HashMap<String, f32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MIDINotePlayMessage {
+    pub(crate) target: String,
+    pub(crate) tone: i32,
+    pub(crate) sus_ms: f32,
+    pub (crate) amp: f32,
+}
+
 impl SequencerNoteMessage {
 
     // TODO: Getting kinda clumsy
