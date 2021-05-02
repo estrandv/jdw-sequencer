@@ -28,7 +28,7 @@ pub struct StateHandle {
 
 fn main() {
 
-    let bpm = Arc::new(Mutex::new(RefCell::new(120)));
+    let bpm = Arc::new(Mutex::new(RefCell::new(60)));
     let queue_data: Arc<Mutex<QueueMetaData>> = Arc::new(Mutex::new(QueueMetaData {updated: RefCell::new(false), queue: RefCell::new(Vec::new())}));
 
     let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle{reset: RefCell::new(false), hard_stop: RefCell::new(false)}));
@@ -95,7 +95,7 @@ fn main_loop(
             let elapsed_beats = match last_loop_time {
                 Some(t) => {
                     let dur = this_loop_time.time() - t.time();
-                    println!("Tick time (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
+                    //println!("Tick time (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
                     midi_utils::ms_to_beats((dur).num_milliseconds(), current_bpm)
                 },
                 None => 0.0
@@ -120,6 +120,8 @@ fn main_loop(
                 on_time.retain(|e| e.clone().get_attr("amp").unwrap_or(0.0) > 0.0);
 
                 if !on_time.is_empty() {
+
+                    //println!("Playing notes {:?} at {:?}", on_time, chrono::offset::Utc::now());
 
                     // The ZMQ posting
                     // TODO: If performance takes a hit, we might need to consider the old way of
@@ -209,6 +211,17 @@ fn main_loop(
                         );
                     }
                 }
+
+                let longest_next =  state.iter()
+                    .max_by_key(|seq| seq.active_sequence.borrow().last_note_time);
+
+                let last_next_loop_note_time = match longest_next {
+                    Some(seq) => seq.active_sequence.borrow().last_note_time,
+                    None => this_loop_time
+                };
+
+                println!("Starting a new loop at time: {}, new loop start time: {}, end time: {}", chrono::offset::Utc::now(), last_note_time, last_next_loop_note_time);
+
             }
 
             // Reset will now be handled and can fall back to false

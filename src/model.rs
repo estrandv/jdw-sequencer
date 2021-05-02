@@ -55,7 +55,8 @@ impl SequencerNote {
 
 /*
  * Self-exhausting set of sequencer notes. 
- */ 
+ */
+#[derive(Debug)]
 pub struct Sequence{
     notes: Vec<SequencerNote>,
     pub last_note_time: DateTime<Utc>,
@@ -138,6 +139,7 @@ pub struct QueueMetaData {
     pub queue: RefCell<Vec<SequencerQueueData>>,
 }
 
+#[derive(Debug)]
 pub struct SequencerMetaData {
     pub queue: RefCell<SequencerQueueData>, 
     pub active_sequence: RefCell<Sequence>,
