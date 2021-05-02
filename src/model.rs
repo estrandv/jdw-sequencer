@@ -58,12 +58,13 @@ impl SequencerNote {
  */ 
 pub struct Sequence{
     notes: Vec<SequencerNote>,
+    pub last_note_time: DateTime<Utc>,
 }
 
 impl Sequence {
 
     pub fn new_empty() -> Self {
-        Sequence {notes: Vec::new()}
+        Sequence {notes: Vec::new(), last_note_time: chrono::offset::Utc::now()}
     }
 
     // RestInputNote arrives in relative time format
@@ -81,21 +82,21 @@ impl Sequence {
                 start_time: iter_time.clone()
             });
 
-            let ms = midi_utils::beats_to_milli_seconds(note.clone().time, bpm);
-            iter_time = iter_time + Duration::milliseconds(ms);
+            let ms = midi_utils::beats_to_micro_seconds(note.clone().time, bpm);
+            iter_time = iter_time + Duration::microseconds(ms);
 
         }
 
         // To represent the final tone "ringing out" before the next loop starts, we add a final
-        // silent note. 
+        // silent note.
         sequencer_notes.push(SequencerNote {
                 message: Option::None,
                 start_time: iter_time.clone()
         });
 
-
         Sequence {
-           notes: sequencer_notes 
+           notes: sequencer_notes,
+            last_note_time: iter_time
         }
     }
 

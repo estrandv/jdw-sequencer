@@ -47,7 +47,7 @@ impl PublishingClient {
             Some(value) => {*value}
         };
 
-        let sus_ms = crate::midi_utils::beats_to_milli_seconds(sus, bpm);
+        let sus_ms = crate::midi_utils::beats_to_micro_seconds(sus, bpm) as f32 / 1000.0;
 
         let amp = match note.args.get("amp") {
             None => {
@@ -60,7 +60,7 @@ impl PublishingClient {
         let midi_note = MIDINotePlayMessage {
             target: note.target,
             tone: tone as i32,
-            sus_ms: sus_ms as f32,
+            sus_ms,
             amp
         };
 

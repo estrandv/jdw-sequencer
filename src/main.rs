@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, println, thread};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
 use model::{OutputTargetType, QueueMetaData, Sequence, SequencerMetaData, SequencerQueueData};
 use std::sync::{Arc, Mutex};
 use crate::model::SequencerNoteMessage;
@@ -76,6 +76,9 @@ fn main_loop(
 
         loop {
 
+            let this_loop_time = chrono::offset::Utc::now();
+
+            let current_bpm = bpm.lock().unwrap().clone().into_inner();
 
             {
                 let state_handle_lock = state_handle.lock().unwrap();
@@ -89,12 +92,12 @@ fn main_loop(
                 }
             }
 
-            let current_bpm = bpm.lock().unwrap().clone().into_inner();
-
-            let this_loop_time = chrono::offset::Utc::now();
-
             let elapsed_beats = match last_loop_time {
-                Some(t) => { midi_utils::ms_to_beats((this_loop_time.time() - t.time()).num_milliseconds(), current_bpm)},
+                Some(t) => {
+                    let dur = this_loop_time.time() - t.time();
+                    println!("Tick time (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
+                    midi_utils::ms_to_beats((dur).num_milliseconds(), current_bpm)
+                },
                 None => 0.0
             };
 
@@ -108,6 +111,7 @@ fn main_loop(
 
             last_loop_time = Some(this_loop_time.clone());
 
+            // Play any notes matching the current time
             for meta_data in state.iter_mut() {
                 
                 let mut on_time = meta_data.active_sequence.get_mut().pop_at_time(this_loop_time.clone());
@@ -151,10 +155,13 @@ fn main_loop(
                 }
             }
 
-            // Only push queue into current state if needed  
+            // Update the queues if a new queue payload has arrived  
             if queue_data.lock().unwrap().updated.clone().into_inner() || state.is_empty() {
+                println!("Updating queue...");
+                // Iterate the queues by alias 
                 for queue in queue_data.lock().unwrap().queue.clone().into_inner().iter() {
-                     let existing = state.iter().find(|data| data.queue.borrow().id == queue.id);
+                     
+                    let existing = state.iter().find(|data| data.queue.borrow().id == queue.id);
 
                      // If a queue with the same id exists, we change the queue data according to
                      // request. If not, we create new queue data with an empty sequence to be
@@ -177,14 +184,30 @@ fn main_loop(
                 queue_data.lock().unwrap().updated.replace(false);
             }
 
-            // Replace all now empty active sequences with their queue counterparts (resetting)
+            // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
             if all_finished || state_handle.lock().unwrap().reset.clone().into_inner() {
+
+                // We cannot rely on the current tick time to supply a new start time, since
+                // it might overshoot the final note time by some amount of microseconds.
+                // Instead we should find what the latest note time was and start from there.
+
+                let longest_sequence =  state.iter()
+                    .max_by_key(|seq| seq.active_sequence.borrow().last_note_time);
+
+                let last_note_time = match longest_sequence {
+                    Some(seq) => seq.active_sequence.borrow().last_note_time,
+                    None => this_loop_time
+                };
+
                 for data in state.iter() {
                     if !data.queue.borrow().queue.borrow().is_empty() {
-                        data.active_sequence.replace(Sequence::new(data.queue.borrow().queue.clone().into_inner(), this_loop_time, current_bpm.clone()));
+                        data.active_sequence.replace(Sequence::new(
+                            data.queue.borrow().queue.clone().into_inner(),
+                            last_note_time,
+                            current_bpm.clone())
+                        );
                     }
-                    
                 }
             }
 
@@ -198,6 +221,7 @@ fn main_loop(
                 // Add a little extra wait time when there are no current playing notes
                 // to prevent resource waste and allow a window in which to pass multiple initial
                 // queues
+                println!("Waiting for queue payload...");
                 std::thread::sleep(std::time::Duration::from_millis(IDLE_TIME_MS))
             }
 
