@@ -3,11 +3,11 @@
 use std::{cell::RefCell, println, thread};
 
 use chrono::{DateTime, Utc, Duration};
-use model::{OutputTargetType, QueueMetaData, Sequence, SequencerMetaData, SequencerQueueData};
+use model::{ApplicationQueue, RealTimeSequence, SequenceHandler, UnprocessedSequence, SequencerTickMessage};
 use std::sync::{Arc, Mutex};
-use crate::model::SequencerNoteMessage;
 use zmq;
 use crate::zeromq::PublishingClient;
+
 
 #[macro_use]
 extern crate rocket;
@@ -15,7 +15,6 @@ extern crate rocket;
 mod model;
 pub mod midi_utils;
 mod api;
-mod external_calls;
 mod zeromq;
 
 const TICK_TIME_MS: u64 = 1;
@@ -28,8 +27,8 @@ pub struct StateHandle {
 
 fn main() {
 
-    let bpm = Arc::new(Mutex::new(RefCell::new(60)));
-    let queue_data: Arc<Mutex<QueueMetaData>> = Arc::new(Mutex::new(QueueMetaData {updated: RefCell::new(false), queue: RefCell::new(Vec::new())}));
+    let bpm = Arc::new(Mutex::new(RefCell::new(120)));
+    let queue_data: Arc<Mutex<ApplicationQueue>> = Arc::new(Mutex::new(ApplicationQueue {updated: RefCell::new(false), queue: RefCell::new(Vec::new())}));
 
     let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle{reset: RefCell::new(false), hard_stop: RefCell::new(false)}));
 
@@ -48,9 +47,6 @@ fn main() {
     rocket::ignite()
         .mount("/", rocket::routes![
             api::set_bpm,
-            api::queue_midi,
-            api::queue_prosc,
-            api::queue_prosc_sample,
             api::reset_queue,
             api::stop
         ])
@@ -62,14 +58,14 @@ fn main() {
 
 fn main_loop(
     bpm: Arc<Mutex<RefCell<i32>>>, // Modified live via API
-    queue_data: Arc<Mutex<QueueMetaData>>, // Modified live via API
+    queue_data: Arc<Mutex<ApplicationQueue>>, // Modified live via API
     state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
     publishing_client: Arc<Mutex<PublishingClient>>,
 ) {
 
     thread::spawn(move || {
 
-        let mut state: Vec<SequencerMetaData> = Vec::new();
+        let mut state: Vec<SequenceHandler> = Vec::new();
 
         let mut last_loop_time: Option<DateTime<Utc>> = Option::None;
         let mut sync_counter: f32 = 0.0;
@@ -116,43 +112,18 @@ fn main_loop(
                 
                 let mut on_time = meta_data.active_sequence.get_mut().pop_at_time(this_loop_time.clone());
 
-                // Currently not posting silent notes for performance reasons 
-                on_time.retain(|e| e.clone().get_attr("amp").unwrap_or(0.0) > 0.0);
-
                 if !on_time.is_empty() {
 
                     //println!("Playing notes {:?} at {:?}", on_time, chrono::offset::Utc::now());
 
                     // The ZMQ posting
-                    // TODO: If performance takes a hit, we might need to consider the old way of
-                    //  adding all on_time to a collected array and posting them all at once
                     {
-
-                        let post = |note: SequencerNoteMessage| {
-                            publishing_client.lock().unwrap().post_note(note);
-                        };
-
-                        let post_sample = |note: SequencerNoteMessage| {
-                            publishing_client.lock().unwrap().post_sample(note);
-                        };
-
-                        let post_midi = |note: SequencerNoteMessage| {
-                            publishing_client.lock().unwrap().post_midi_note(note, bpm.lock().unwrap().clone().into_inner());
-                        };
-
-                        match meta_data.queue.borrow().target_type {
-                            OutputTargetType::Prosc => {
-                                on_time.iter().map(|e| e.convert()).for_each(|e| post(e.clone()));
-                            },
-                            OutputTargetType::ProscSample => {
-                                on_time.iter().map(|e| e.convert()).for_each(|e| post_sample(e.clone()));
-                            },
-                            OutputTargetType::MIDI => {
-                                on_time.iter().map(|e| e.convert()).for_each(|e| post_midi(e.clone()));
-                            },
-                            _ => {}
-                        }
-
+                        on_time.iter().map(|e| e.message.clone()).for_each(|e| {
+                            match e {
+                                Some(msg) => publishing_client.lock().unwrap().post_note(msg),
+                                None => {}
+                            }
+                        });
                     }
                 }
             }
@@ -173,9 +144,9 @@ fn main_loop(
                             old_data.queue.replace(queue.clone());
                         },
                         None => {
-                            let new_data = SequencerMetaData {
+                            let new_data = SequenceHandler {
                                 queue: RefCell::new(queue.clone()),
-                                active_sequence: RefCell::new(Sequence::new_empty()),
+                                active_sequence: RefCell::new(RealTimeSequence::new_empty()),
                             };
 
                             state.push(new_data);
@@ -204,7 +175,7 @@ fn main_loop(
 
                 for data in state.iter() {
                     if !data.queue.borrow().queue.borrow().is_empty() {
-                        data.active_sequence.replace(Sequence::new(
+                        data.active_sequence.replace(RealTimeSequence::new(
                             data.queue.borrow().queue.clone().into_inner(),
                             last_note_time,
                             current_bpm.clone())

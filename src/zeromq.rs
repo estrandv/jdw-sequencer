@@ -1,6 +1,6 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{QueueMetaData, SequencerNoteMessage, SequencerQueueData, OutputTargetType, MIDINotePlayMessage};
+use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage};
 use crate::StateHandle;
 use zmq::Socket;
 use std::thread;
@@ -22,53 +22,13 @@ impl PublishingClient {
         PublishingClient {socket}
     }
 
-    pub fn post_note(&self, note: SequencerNoteMessage) {
-        self.socket.send(format!("JDW.PLAY.NOTE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
-    }
-
-    pub fn post_sample(&self, note: SequencerNoteMessage) {
-        self.socket.send(format!("JDW.PLAY.SAMPLE::{}", serde_json::to_string(&note).unwrap()).as_bytes(), 0);
-    }
-
-    pub fn post_midi_note(&self, note: SequencerNoteMessage, bpm: i32) {
-        let tone: f32 = match note.args.get("freq") {
-            None => {
-                println!("WARN: Supplied MIDI note had no <freq> arg, defaulted to 44");
-                44.0
-            }
-            Some(value) => {*value}
-        };
-
-        let sus = match note.args.get("sus") {
-            None => {
-                println!("WARN: Supplied MIDI note had no <sus> arg, defaulted to 1");
-                1.0
-            }
-            Some(value) => {*value}
-        };
-
-        let sus_ms = crate::midi_utils::beats_to_micro_seconds(sus, bpm) as f32 / 1000.0;
-
-        let amp = match note.args.get("amp") {
-            None => {
-                println!("WARN: Supplied MIDI note had no <amp> arg, defaulted to 1");
-                1.0
-            }
-            Some(value) => {*value}
-        };
-
-        let midi_note = MIDINotePlayMessage {
-            target: note.target,
-            tone: tone as i32,
-            sus_ms,
-            amp
-        };
-
-        self.socket.send(
-            format!("JDW.MIDI.PLAY.NOTE::{}", serde_json::to_string(&midi_note).unwrap()).as_bytes(),
-            0
-        );
-
+    // TODO: Fix MIDI posting
+    // MIDI needs to convert sustain time to actual seconds using BPM
+    // Best way to convey that info is probably by supplying SEQ.START to MIDI with the
+    // given BPM of the sequencer. Either that or by supplying the calculated time in the message itself
+    // from pycompose.
+    pub fn post_note(&self, note: SequencerTickMessage) {
+        self.socket.send(&note.msg, 0);
     }
 
     pub fn post_midi_sync(&self) {
@@ -77,7 +37,7 @@ impl PublishingClient {
 }
 
 
-pub fn poll(queue_data: Arc<Mutex<QueueMetaData>>, state_handle: Arc<Mutex<StateHandle>>) {
+pub fn poll(queue_data: Arc<Mutex<ApplicationQueue>>, state_handle: Arc<Mutex<StateHandle>>) {
 
     thread::spawn(move || {
         let context = zmq::Context::new();
@@ -87,40 +47,47 @@ pub fn poll(queue_data: Arc<Mutex<QueueMetaData>>, state_handle: Arc<Mutex<State
 
         loop {
             let msg = socket.recv_msg(0).unwrap();
+            println!("recv {}", msg.as_str().unwrap());
+
             let decoded_msg = msg.as_str().unwrap().split("::").collect::<Vec<&str>>();
 
             // JDW.SEQ.QUE.NOTES::[{"target": "blipp", "alias": "blipp1", "time": 0.0, "args": {"amp": 1.0}}]
+            // TODO: SHOULD BE
+            // JDW.SEQ.QUEUE::[{alias, time, message}]
             let msg_type = decoded_msg.get(0).unwrap().to_string();
-            let json_msg = decoded_msg.get(1).unwrap_or(&"").to_string();
+            let type_handle = format!("{}::", msg_type);
 
-            if &msg_type == "JDW.SEQ.QUE.NOTES" {
-                update_queue(json_msg, queue_data.clone(), OutputTargetType::Prosc)
-            } else if &msg_type == "JDW.SEQ.QUE.SAMPLES" {
-                update_queue(json_msg, queue_data.clone(), OutputTargetType::ProscSample)
-            } else if &msg_type == "JDW.SEQ.QUE.MIDI" {
-                update_queue(json_msg, queue_data.clone(), OutputTargetType::MIDI)
+            println!("type_handle: {}", &type_handle);
+
+            let json_msg = msg.as_str()
+                .unwrap()
+                .split(&type_handle)
+                .collect::<Vec<&str>>()
+                .get(1).unwrap_or(&"").to_string();
+
+            println!("nested: {}", json_msg.clone());
+
+            let payload: Vec<SequencerTickMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+
+            if payload.is_empty() {
+                println!("WARN: Received empty or malformed JDW.SEQ.QUEUE payload");
             }
+
+            update_queue(payload, queue_data.clone());
 
         }
 
     });
 }
 
-fn update_queue(json_msg: String, queue_data: Arc<Mutex<QueueMetaData>>, posting_type: OutputTargetType) {
-    let payload: Vec<SequencerNoteMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+fn update_queue(payload: Vec<SequencerTickMessage>, queue_data: Arc<Mutex<ApplicationQueue>>) {
 
-    if payload.is_empty() {
-        println!("WARN: Received empty or malformed JDW.SEQ.QUE.*");
-    }
-
-    let mut grouped_by_alias: HashMap<String, Vec<SequencerNoteMessage>> = HashMap::new();
-    for note in payload {
-        if !grouped_by_alias.contains_key(&note.alias) {
-            grouped_by_alias.insert(note.alias.to_string(), Vec::new());
+    let mut grouped_by_alias: HashMap<String, Vec<SequencerTickMessage>> = HashMap::new();
+    for msg in payload {
+        if !grouped_by_alias.contains_key(&msg.alias) {
+            grouped_by_alias.insert(msg.alias.to_string(), Vec::new());
         }
-
-        grouped_by_alias.get_mut(&note.alias).unwrap().push(note);
-
+        grouped_by_alias.get_mut(&msg.alias).unwrap().push(msg);
     }
 
     println!("Parsed queue message: {:?}", &grouped_by_alias);
@@ -135,10 +102,8 @@ fn update_queue(json_msg: String, queue_data: Arc<Mutex<QueueMetaData>>, posting
             queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
 
             // Create a new queue entry for the alias containing all the notes in the request
-            queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
+            queue_data.lock().unwrap().queue.borrow_mut().push(UnprocessedSequence {
                 id: alias,
-                target_type: posting_type.clone(),
-                instrument_id: value.get(0).unwrap().clone().target, // TODO: instrument id will not be needed here in the future
                 queue: RefCell::new(value)
             });
 

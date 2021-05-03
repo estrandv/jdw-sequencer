@@ -1,12 +1,10 @@
-// Access to playerManager (queue) and sequencerService (bpm)
-
 use rocket_contrib::json::Json;
 use rocket::State;
 use std::{cell::RefCell, sync::Arc};
 use std::sync::Mutex;
 
-use crate::{StateHandle, model::QueueMetaData};
-use crate::model::{SequencerQueueData, SequencerNoteMessage};
+use crate::{StateHandle, model::ApplicationQueue};
+use crate::model::{UnprocessedSequence};
 
 #[get("/bpm/<bpm>")]
 pub fn set_bpm(
@@ -28,73 +26,4 @@ pub fn stop(
     state_handle: State<Arc<Mutex<StateHandle>>>
 ) {
     state_handle.lock().unwrap().hard_stop.replace(true);
-}
-
-/*
-    Queue notes to registered prosc output of name
-    Use the given alias; with different aliases you can queue several sets to the same
-        output. Queueing to the same alias will replace the notes/output for that alias on its next loop.
- */
-#[post("/queue/prosc/<output_name>/<alias>", format="json", data="<notes>")]
-pub fn queue_prosc(
-    output_name: String,
-    alias: String,
-    notes: Json<Vec<SequencerNoteMessage>>,
-    queue_data: State<Arc<Mutex<QueueMetaData>>>,
-) {
-
-    // Clear any pre-existing queue data of that alias
-    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
-
-    // Create a new queue entry for the alias containing all the notes in the request
-    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
-        id: alias,
-        target_type: crate::model::OutputTargetType::Prosc,
-        instrument_id: output_name,
-        queue: RefCell::new(notes.into_inner())
-    });
-
-    // Notify the main thread that queue has been updated
-    queue_data.lock().unwrap().updated.replace(true);
-
-}
-
-#[post("/queue/prosc_sample/<output_name>/<alias>", format="json", data="<notes>")]
-pub fn queue_prosc_sample(
-    output_name: String,
-    alias: String,
-    notes: Json<Vec<SequencerNoteMessage>>,
-    queue_data: State<Arc<Mutex<QueueMetaData>>>,
-) {
-
-    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
- 
-    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
-        id: alias,
-        target_type: crate::model::OutputTargetType::ProscSample,
-        instrument_id: output_name,
-        queue: RefCell::new(notes.into_inner())
-    }); 
-    queue_data.lock().unwrap().updated.replace(true);
-
-}
-
-#[post("/queue/midi/<output_name>/<alias>", format="json", data="<notes>")]
-pub fn queue_midi(
-    output_name: String,
-    alias: String,
-    notes: Json<Vec<SequencerNoteMessage>>,
-    queue_data: State<Arc<Mutex<QueueMetaData>>>,
-) {
- 
-    queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
- 
-    queue_data.lock().unwrap().queue.borrow_mut().push(SequencerQueueData {
-        id: alias,
-        target_type: crate::model::OutputTargetType::MIDI,
-        instrument_id: output_name,
-        queue: RefCell::new(notes.into_inner())
-    });    
-
-    queue_data.lock().unwrap().updated.replace(true);
 }
