@@ -35,7 +35,8 @@ fn main() {
     // Start polling for incoming ZeroMQ messages
     zeromq::poll(
         queue_data.clone(),
-        state_handle.clone()
+        state_handle.clone(),
+        bpm.clone()
     );
 
     // Prepare ZeroMQ outgoing client

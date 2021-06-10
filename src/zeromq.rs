@@ -37,7 +37,11 @@ impl PublishingClient {
 }
 
 
-pub fn poll(queue_data: Arc<Mutex<ApplicationQueue>>, state_handle: Arc<Mutex<StateHandle>>) {
+pub fn poll(
+    queue_data: Arc<Mutex<ApplicationQueue>>,
+    state_handle: Arc<Mutex<StateHandle>>,
+    bpm: Arc<Mutex<RefCell<i32>>>,
+) {
 
     thread::spawn(move || {
         let context = zmq::Context::new();
@@ -67,13 +71,19 @@ pub fn poll(queue_data: Arc<Mutex<ApplicationQueue>>, state_handle: Arc<Mutex<St
 
             println!("nested: {}", json_msg.clone());
 
-            let payload: Vec<SequencerTickMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+            if msg_type == String::from("JDW.SEQ.QUEUE") {
+                let payload: Vec<SequencerTickMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
 
-            if payload.is_empty() {
-                println!("WARN: Received empty or malformed JDW.SEQ.QUEUE payload");
+                if payload.is_empty() {
+                    println!("WARN: Received empty or malformed JDW.SEQ.QUEUE payload");
+                }
+
+                update_queue(payload, queue_data.clone());
+            } else if msg_type == String::from("JDW.SEQ.BPM") {
+                bpm.lock().unwrap().replace(serde_json::from_str(&json_msg).unwrap());
+            } else {
+                println!("Unknown message type: {}", msg_type);
             }
-
-            update_queue(payload, queue_data.clone());
 
         }
 
