@@ -1,6 +1,6 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage};
+use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage, LoopStartMessage};
 use crate::StateHandle;
 use zmq::Socket;
 use std::thread;
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use serde::Serialize;
 use serde_json;
+use chrono::{DateTime, Utc};
 
 pub struct PublishingClient {
     socket: Socket
@@ -33,6 +34,15 @@ impl PublishingClient {
 
     pub fn post_midi_sync(&self) {
         self.socket.send("JDW.MIDI.SYNC::".as_bytes(), 0);
+    }
+
+    pub fn post_loop_start(&self, time: DateTime<Utc>, bpm: i32) {
+        let msg = LoopStartMessage {
+            time: time.to_rfc3339(),
+            bpm
+        };
+
+        self.socket.send(format!("JDW.SEQ.BEGIN::{}", serde_json::to_string(&msg).unwrap()).as_bytes(), 0);
     }
 }
 

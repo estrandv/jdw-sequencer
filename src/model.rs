@@ -6,6 +6,16 @@ use serde::{Deserialize, Serialize};
 use crate::{midi_utils};
 use std::collections::HashMap;
 
+
+/*
+    Message sent at the start of each new full sequencer loop
+ */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopStartMessage {
+    pub time: String, // standard format date string
+    pub bpm: i32
+}
+
 /*
     Message to be executed on relative time for given alias,
     as received from ZeroMQ

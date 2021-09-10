@@ -76,17 +76,13 @@ fn main_loop(
             let this_loop_time = chrono::offset::Utc::now();
 
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
+            let reset_requested = state_handle.lock().unwrap().reset.clone().into_inner();
+            let hard_stop_requested = state_handle.lock().unwrap().hard_stop.clone().into_inner();
 
+            // Since any reset and stop vars are now picked out, we can reset them to false in state
             {
-                let state_handle_lock = state_handle.lock().unwrap();
-                // Force reset means dump everything
-                if state_handle_lock.reset.clone().into_inner() || state_handle_lock.hard_stop.clone().into_inner() {
-                    state = Vec::new();
-                }
-
-                if state_handle_lock.hard_stop.clone().into_inner() {
-                    queue_data.lock().unwrap().queue.replace(Vec::new());
-                }
+                state_handle.lock().unwrap().reset.replace(false);
+                state_handle.lock().unwrap().hard_stop.replace(false);
             }
 
             let elapsed_beats = match last_loop_time {
@@ -100,10 +96,11 @@ fn main_loop(
 
             sync_counter += elapsed_beats;
 
-            // MIDI Sync allegedly happens 24 times per beat 
-            if sync_counter > ( 1.0 / 24.0 ) {
-                let _res = publishing_client.lock().unwrap().post_midi_sync();
-                sync_counter = 0.0;
+            // MIDI Sync allegedly happens 24 times per beat
+            let denominator = 1.0 / 24.0;
+            if sync_counter >= denominator {
+                publishing_client.lock().unwrap().post_midi_sync();
+                sync_counter = sync_counter - denominator;
             }
 
             last_loop_time = Some(this_loop_time.clone());
@@ -160,7 +157,7 @@ fn main_loop(
 
             // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = state.iter().all(|data| data.active_sequence.borrow().is_finished());
-            if all_finished || state_handle.lock().unwrap().reset.clone().into_inner() {
+            if all_finished || reset_requested {
 
                 // We cannot rely on the current tick time to supply a new start time, since
                 // it might overshoot the final note time by some amount of microseconds.
@@ -169,7 +166,8 @@ fn main_loop(
                 let longest_sequence =  state.iter()
                     .max_by_key(|seq| seq.active_sequence.borrow().last_note_time);
 
-                let last_note_time = match longest_sequence {
+                // Last note time is new start time
+                let new_loop_start_time = match longest_sequence {
                     Some(seq) => seq.active_sequence.borrow().last_note_time,
                     None => this_loop_time
                 };
@@ -178,7 +176,7 @@ fn main_loop(
                     if !data.queue.borrow().queue.borrow().is_empty() {
                         data.active_sequence.replace(RealTimeSequence::new(
                             data.queue.borrow().queue.clone().into_inner(),
-                            last_note_time,
+                            new_loop_start_time,
                             current_bpm.clone())
                         );
                     }
@@ -192,14 +190,29 @@ fn main_loop(
                     None => this_loop_time
                 };
 
-                println!("Starting a new loop at time: {}, new loop start time: {}, end time: {}", chrono::offset::Utc::now(), last_note_time, last_next_loop_note_time);
+                println!(
+                    "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
+                    chrono::offset::Utc::now(),
+                    new_loop_start_time,
+                    last_next_loop_note_time
+                );
+
+                publishing_client.lock().unwrap().post_loop_start(
+                    new_loop_start_time,
+                    bpm.lock().unwrap().clone().into_inner()
+                );
 
             }
 
-            // Reset will now be handled and can fall back to false
             {
-                state_handle.lock().unwrap().reset.replace(false);
-                state_handle.lock().unwrap().hard_stop.replace(false);
+                // Force reset means dump everything
+                if reset_requested || hard_stop_requested {
+                    state = Vec::new();
+                }
+
+                if hard_stop_requested {
+                    queue_data.lock().unwrap().queue.replace(Vec::new());
+                }
             }
 
             if state.is_empty() {
