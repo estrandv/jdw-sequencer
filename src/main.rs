@@ -7,6 +7,7 @@ use model::{ApplicationQueue, RealTimeSequence, SequenceHandler, UnprocessedSequ
 use std::sync::{Arc, Mutex};
 use zmq;
 use crate::zeromq::PublishingClient;
+use spin_sleep;
 
 
 #[macro_use]
@@ -17,7 +18,8 @@ pub mod midi_utils;
 mod api;
 mod zeromq;
 
-const TICK_TIME_MS: u64 = 1;
+// /1000 for ms
+const TICK_TIME_US: u64 = 5000;
 const IDLE_TIME_MS: u64 = 200;
 
 pub struct StateHandle {
@@ -74,6 +76,15 @@ fn main_loop(
         loop {
 
             let this_loop_time = chrono::offset::Utc::now();
+            let elapsed_time = match last_loop_time {
+                Some(t) => {
+                    this_loop_time.time() - t.time()
+                },
+                None => Duration::zero()
+            };
+            last_loop_time = Some(this_loop_time.clone());
+
+            println!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
 
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
             let reset_requested = state_handle.lock().unwrap().reset.clone().into_inner();
@@ -85,15 +96,7 @@ fn main_loop(
                 state_handle.lock().unwrap().hard_stop.replace(false);
             }
 
-            let elapsed_beats = match last_loop_time {
-                Some(t) => {
-                    let dur = this_loop_time.time() - t.time();
-                    //println!("Tick time (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
-                    midi_utils::ms_to_beats((dur).num_milliseconds(), current_bpm)
-                },
-                None => 0.0
-            };
-
+            let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
             sync_counter += elapsed_beats;
 
             // MIDI Sync allegedly happens 24 times per beat
@@ -103,7 +106,6 @@ fn main_loop(
                 sync_counter = sync_counter - denominator;
             }
 
-            last_loop_time = Some(this_loop_time.clone());
 
             // Play any notes matching the current time
             for meta_data in state.iter_mut() {
@@ -215,15 +217,34 @@ fn main_loop(
                 }
             }
 
+            /*
             if state.is_empty() {
                 // Add a little extra wait time when there are no current playing notes
                 // to prevent resource waste and allow a window in which to pass multiple initial
                 // queues
                 println!("Waiting for queue payload...");
                 std::thread::sleep(std::time::Duration::from_millis(IDLE_TIME_MS))
+            } else {
+
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(TICK_TIME_MS));
+
+             */
+
+            let dur = chrono::offset::Utc::now().time() - this_loop_time.time();
+            //println!("Full tick (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
+            let time_taken = dur.num_microseconds().unwrap_or(0) as u64;
+            println!("Subtracting {} from {}", time_taken, TICK_TIME_US);
+            if time_taken > TICK_TIME_US {
+                println!("WARN: Operations performed (time: {}) exceed tick time, overflow...", time_taken);
+                spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
+            } else {
+
+                let remainder = TICK_TIME_US - time_taken;
+                let sleeper = spin_sleep::SpinSleeper::new(100);
+                sleeper.sleep(std::time::Duration::from_micros(remainder));
+
+            }
 
             //println!("End loop: {}", this_loop_time);            
         } // end loop 

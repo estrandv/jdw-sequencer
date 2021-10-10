@@ -774,6 +774,7 @@ dependencies = [
  "rocket_contrib",
  "serde",
  "serde_json",
+ "spin_sleep",
  "tracing",
  "tracing-futures",
  "zmq",
@@ -1583,6 +1584,16 @@ checksum = "122e570113d28d773067fab24266b66753f6ea915758651696b6e35e49f88d6e"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "spin_sleep"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a98101bdc3833e192713c2af0b0dd2614f50d1cf1f7a97c5221b7aac052acc7"
+dependencies = [
+ "once_cell",
  "winapi 0.3.9",
 ]
 
