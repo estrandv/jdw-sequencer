@@ -84,7 +84,7 @@ fn main_loop(
             };
             last_loop_time = Some(this_loop_time.clone());
 
-            println!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
+            //println!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
 
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
             let reset_requested = state_handle.lock().unwrap().reset.clone().into_inner();
@@ -234,7 +234,7 @@ fn main_loop(
             let dur = chrono::offset::Utc::now().time() - this_loop_time.time();
             //println!("Full tick (ms): {:?}", dur.num_microseconds().unwrap() as f32 / 1000.0);
             let time_taken = dur.num_microseconds().unwrap_or(0) as u64;
-            println!("Subtracting {} from {}", time_taken, TICK_TIME_US);
+            //println!("Subtracting {} from {}", time_taken, TICK_TIME_US);
             if time_taken > TICK_TIME_US {
                 println!("WARN: Operations performed (time: {}) exceed tick time, overflow...", time_taken);
                 spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));

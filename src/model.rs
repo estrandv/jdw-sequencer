@@ -28,6 +28,14 @@ pub struct SequencerTickMessage {
 }
 
 /*
+    Message for wiping the sequence with the given alias
+ */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequencerWipeMessage {
+    pub alias: String
+}
+
+/*
     SequencerTickMessage wrapper parsed in relative order for absolute start-time
  */
 #[derive(Debug, Clone)]

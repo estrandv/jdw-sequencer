@@ -1,6 +1,6 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage, LoopStartMessage};
+use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage, LoopStartMessage, SequencerWipeMessage};
 use crate::StateHandle;
 use zmq::Socket;
 use std::thread;
@@ -61,6 +61,7 @@ pub fn poll(
         socket.connect("tcp://localhost:5560").unwrap();
         socket.set_subscribe("JDW.SEQ.BPM".as_bytes());
         socket.set_subscribe("JDW.SEQ.QUEUE".as_bytes());
+        socket.set_subscribe("JDW.SEQ.WIPE".as_bytes());
 
         loop {
             let msg = socket.recv_msg(0).unwrap();
@@ -89,6 +90,18 @@ pub fn poll(
                 }
 
                 update_queue(payload, queue_data.clone());
+            } else if msg_type == String::from("JDW.SEQ.WIPE") {
+                let payload: Vec<SequencerWipeMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+                let aliases: Vec<String>= payload.iter().map(|p| p.alias.to_string()).collect();
+                queue_data.lock().unwrap().queue.borrow_mut().retain(|e| !aliases.contains(&e.id));
+
+                for alias in aliases {
+                    queue_data.lock().unwrap().queue.borrow_mut().push(UnprocessedSequence {
+                        id: alias,
+                        queue: RefCell::new(Vec::new())
+                    });
+                }
+
             } else if msg_type == String::from("JDW.SEQ.BPM") {
                 bpm.lock().unwrap().replace(serde_json::from_str(&json_msg).unwrap());
             } else {
