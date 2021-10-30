@@ -19,7 +19,7 @@ mod api;
 mod zeromq;
 
 // /1000 for ms
-const TICK_TIME_US: u64 = 5000;
+const TICK_TIME_US: u64 = 2000;
 const IDLE_TIME_MS: u64 = 200;
 
 pub struct StateHandle {
@@ -114,16 +114,13 @@ fn main_loop(
 
                 if !on_time.is_empty() {
 
-                    //println!("Playing notes {:?} at {:?}", on_time, chrono::offset::Utc::now());
+                    //println!("Playing notes at {:?}", chrono::offset::Utc::now());
 
                     // The ZMQ posting
                     {
-                        on_time.iter().map(|e| e.message.clone()).for_each(|e| {
-                            match e {
-                                Some(msg) => publishing_client.lock().unwrap().post_note(msg),
-                                None => {}
-                            }
-                        });
+                        let post_time = chrono::offset::Utc::now();
+                        let unwrapped = on_time.iter().filter(|t| t.message.clone().is_some()).map(|t| t.message.clone().unwrap()).collect();
+                        publishing_client.lock().unwrap().post_note(unwrapped, post_time.clone());
                     }
                 }
             }
@@ -171,7 +168,10 @@ fn main_loop(
                 // Last note time is new start time
                 let new_loop_start_time = match longest_sequence {
                     Some(seq) => seq.active_sequence.borrow().last_note_time,
-                    None => this_loop_time
+                    None => {
+                        println!("WARN: No max time found");
+                        this_loop_time
+                    }
                 };
 
                 for data in state.iter() {
@@ -240,9 +240,9 @@ fn main_loop(
                 spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
             } else {
 
-                let remainder = TICK_TIME_US - time_taken;
+                //let remainder = TICK_TIME_US - time_taken;
                 let sleeper = spin_sleep::SpinSleeper::new(100);
-                sleeper.sleep(std::time::Duration::from_micros(remainder));
+                sleeper.sleep(std::time::Duration::from_micros(TICK_TIME_US));
 
             }
 

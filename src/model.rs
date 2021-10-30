@@ -44,6 +44,15 @@ pub struct RealTimeSequencerTick {
     pub start_time: chrono::DateTime<Utc>,
 }
 
+// TODO: We want to send a message with a time-stamp
+// Issue is that we are typically unaware of the message contents
+// So either we break that rule or start wrapping a second layer
+// Wrapping a second layer means we probably have to rework all receivers
+// Breaking the rule feels idiotic since it defeats the purpose of having wrapped initial messages
+// We could also rework the message format, so that messages always contain timestamps
+// Something like <tag>::<time>::<msg>
+// ... which is probably the best way to go about it but also the most laboursome
+
 /*
     The pre-realtime format as it appears in the queue
  */
@@ -117,9 +126,11 @@ impl RealTimeSequence {
                 start_time: iter_time.clone()
         });
 
+        let start_time = sequencer_notes.get(0).unwrap().start_time.clone();
+        println!("### New loop length: {:?}", iter_time.clone() - start_time);
+
         RealTimeSequence {
-           notes: sequencer_notes,
-            last_note_time: iter_time
+           notes: sequencer_notes, last_note_time: iter_time
         }
     }
 

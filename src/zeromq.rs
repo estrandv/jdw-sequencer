@@ -28,9 +28,21 @@ impl PublishingClient {
     // Best way to convey that info is probably by supplying SEQ.START to MIDI with the
     // given BPM of the sequencer. Either that or by supplying the calculated time in the message itself
     // from pycompose.
-    pub fn post_note(&self, note: SequencerTickMessage) {
-        self.socket.send(&note.msg, 0);
-        self.socket.recv_string(0);
+    pub fn post_note(&self, notes: Vec<SequencerTickMessage>, timestamp: DateTime<Utc>) {
+
+
+        /*
+        let decoded_msg = &note.msg.split("::").collect::<Vec<&str>>();
+        let msg_type = decoded_msg.get(0).unwrap().to_string();
+        let msg_contents = decoded_msg.get(1).unwrap_or(&"{}").to_string();
+        let remade = format!("{}::{}::{}", msg_type, timestamp.to_rfc3339(), msg_contents);
+
+         */
+
+        let unwrapped: Vec<String> = notes.iter().map(|n| n.msg.clone()).collect();
+        let payload = format!("JDW.SEQ.BATCH::{}::{}", timestamp.to_rfc3339(), serde_json::to_string(&unwrapped).unwrap_or("[]".to_string()));
+        self.socket.send(&payload, 0);
+        //self.socket.recv_string(0);
     }
 
     pub fn post_midi_sync(&self) {
@@ -65,12 +77,12 @@ pub fn poll(
 
         loop {
             let msg = socket.recv_msg(0).unwrap();
-            //println!("recv {}", msg.as_str().unwrap());
 
             let decoded_msg = msg.as_str().unwrap().split("::").collect::<Vec<&str>>();
 
             let msg_type = decoded_msg.get(0).unwrap().to_string();
-            let type_handle = format!("{}::", msg_type);
+            let msg_timestamp = decoded_msg.get(1).unwrap_or(&"").to_string();
+            let type_handle = format!("{}::{}::", msg_type, msg_timestamp);
 
             println!("message: {}", &type_handle);
 
