@@ -105,8 +105,7 @@ fn main_loop(
                 publishing_client.lock().unwrap().post_midi_sync();
                 sync_counter = sync_counter - denominator;
             }
-
-
+            
             // Play any notes matching the current time
             for meta_data in state.iter_mut() {
                 

@@ -117,7 +117,7 @@ pub fn poll(
             } else if msg_type == String::from("JDW.SEQ.BPM") {
                 bpm.lock().unwrap().replace(serde_json::from_str(&json_msg).unwrap());
             } else {
-                panic!("Unknown message type: {}", msg_type);
+                println!("Unknown message type: {}", msg_type);
             }
 
             // TODO: BPM only appears to come through when the application shuts down or starts
