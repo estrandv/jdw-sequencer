@@ -1,7 +1,7 @@
 use zmq;
 use std::sync::{Arc, Mutex};
-use crate::model::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage, LoopStartMessage, SequencerWipeMessage};
-use crate::StateHandle;
+use crate::queue::{ApplicationQueue, UnprocessedSequence, SequencerTickMessage};
+use crate::{StateHandle};
 use zmq::Socket;
 use std::thread;
 use std::collections::HashMap;
@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use serde::Serialize;
 use serde_json;
 use chrono::{DateTime, Utc};
+use crate::model::{LoopStartMessage, SequencerWipeMessage};
 
 pub struct PublishingClient {
     socket: Socket
@@ -30,19 +31,10 @@ impl PublishingClient {
     // from pycompose.
     pub fn post_note(&self, notes: Vec<SequencerTickMessage>, timestamp: DateTime<Utc>) {
 
-
-        /*
-        let decoded_msg = &note.msg.split("::").collect::<Vec<&str>>();
-        let msg_type = decoded_msg.get(0).unwrap().to_string();
-        let msg_contents = decoded_msg.get(1).unwrap_or(&"{}").to_string();
-        let remade = format!("{}::{}::{}", msg_type, timestamp.to_rfc3339(), msg_contents);
-
-         */
-
-        let unwrapped: Vec<String> = notes.iter().map(|n| n.msg.clone()).collect();
-        let payload = format!("JDW.SEQ.BATCH::{}::{}", timestamp.to_rfc3339(), serde_json::to_string(&unwrapped).unwrap_or("[]".to_string()));
-        self.socket.send(&payload, 0);
-        //self.socket.recv_string(0);
+        // NOTE: Keepign commented for compiling example
+        let unwrapped: Vec<_> = notes.iter().map(|n| n.msg.clone()).collect();
+        //let payload = format!("JDW.SEQ.BATCH::{}::{}", timestamp.to_rfc3339(), serde_json::to_string(&unwrapped).unwrap_or("[]".to_string()));
+        //self.socket.send(&payload, 0);
     }
 
     pub fn post_midi_sync(&self) {
@@ -95,13 +87,14 @@ pub fn poll(
             //println!("nested: {}", json_msg.clone());
 
             if msg_type == String::from("JDW.SEQ.QUEUE") {
-                let payload: Vec<SequencerTickMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+                //let payload: Vec<SequencerTickMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
+                let payload = vec![]; // Note: commented for compiling example
 
                 if payload.is_empty() {
                     println!("WARN: Received empty or malformed JDW.SEQ.QUEUE payload");
                 }
 
-                update_queue(payload, queue_data.clone());
+                queue_data.lock().unwrap().update_queue(payload);
             } else if msg_type == String::from("JDW.SEQ.WIPE") {
                 let payload: Vec<SequencerWipeMessage> = serde_json::from_str(&json_msg).unwrap_or(Vec::new());
                 let aliases: Vec<String>= payload.iter().map(|p| p.alias.to_string()).collect();
@@ -130,36 +123,3 @@ pub fn poll(
     });
 }
 
-fn update_queue(payload: Vec<SequencerTickMessage>, queue_data: Arc<Mutex<ApplicationQueue>>) {
-
-    let mut grouped_by_alias: HashMap<String, Vec<SequencerTickMessage>> = HashMap::new();
-    for msg in payload {
-        if !grouped_by_alias.contains_key(&msg.alias) {
-            grouped_by_alias.insert(msg.alias.to_string(), Vec::new());
-        }
-        grouped_by_alias.get_mut(&msg.alias).unwrap().push(msg);
-    }
-
-    println!("Queue call received!");
-    //println!("Parsed queue message: {:?}", &grouped_by_alias);
-
-    for (alias, value) in grouped_by_alias {
-
-        if value.is_empty() {
-            println!("Clearing empty queue data for {}", alias);
-        }
-
-        // Clear any pre-existing queue data of that alias
-        queue_data.lock().unwrap().queue.borrow_mut().retain(|e| *e.id != alias);
-        //println!("Queueing: {:?} to {}", value.clone(), alias);
-
-        // Create a new queue entry for the alias containing all the notes in the request
-        queue_data.lock().unwrap().queue.borrow_mut().push(UnprocessedSequence {
-            id: alias,
-            queue: RefCell::new(value)
-        });
-
-        // Notify the main thread that queue has been updated
-        queue_data.lock().unwrap().updated.replace(true);
-    }
-}

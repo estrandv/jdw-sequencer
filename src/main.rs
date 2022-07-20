@@ -1,22 +1,24 @@
-#![feature(proc_macro_hygiene, decl_macro)]
+#![feature(result_flattening, proc_macro_hygiene, decl_macro)]
+
 
 use std::{cell::RefCell, println, thread};
 
 use chrono::{DateTime, Utc, Duration};
-use model::{ApplicationQueue, RealTimeSequence, SequenceHandler, UnprocessedSequence, SequencerTickMessage};
+use osc_model::{TaggedBundle, UpdateQueueMessage, TimedOscMessage};
+use queue::SequencerTickMessage;
 use std::sync::{Arc, Mutex};
-use zmq;
+use rosc::{OscMessage, OscPacket, OscBundle};
 use crate::zeromq::PublishingClient;
 use spin_sleep;
-
-
-#[macro_use]
-extern crate rocket;
+use crate::osc_client::OSCClient;
+use crate::queue::{ApplicationQueue, RealTimeSequence, SequenceHandler};
 
 mod model;
 pub mod midi_utils;
-mod api;
 mod zeromq;
+mod osc_client;
+mod queue;
+mod osc_model;
 
 // /1000 for ms
 const TICK_TIME_US: u64 = 2000;
@@ -45,25 +47,125 @@ fn main() {
     let client = Arc::new(Mutex::new(PublishingClient::new()));
 
     // Get the main loop chugging before initializing the API
-    main_loop(bpm.clone(), queue_data.clone(), state_handle.clone(), client);
 
-    rocket::ignite()
-        .mount("/", rocket::routes![
-            api::set_bpm,
-            api::reset_queue,
-            api::stop
-        ])
-        .manage(bpm)
-        .manage(queue_data)
-        .manage(state_handle)
-        .launch();
+    // TODO: Structure for all this will need some more careful thinking
+    let osc_client = OSCClient::new();
+    let osc_client_handle = Arc::new(Mutex::new(osc_client));
+
+    main_loop(
+        bpm.clone(),
+        queue_data.clone(),
+        state_handle.clone(),
+        client,
+    osc_client_handle.clone());
+
+
+    let osc_read = OSCRead {
+        osc_client: osc_client_handle,
+        queue_data,
+        state_handle,
+        bpm
+    };
+
+    loop {
+        osc_read.scan();
+    }
+
 }
 
+
+// Handle all incoming messages
+struct OSCRead {
+    osc_client: Arc<Mutex<OSCClient>>,
+    queue_data: Arc<Mutex<ApplicationQueue>>,
+    state_handle: Arc<Mutex<StateHandle>>,
+    bpm: Arc<Mutex<RefCell<i32>>>,
+}
+
+impl OSCRead {
+    fn scan(&self) {
+        match self.osc_client.lock().unwrap().poll() {
+            Ok(osc_packet) => {
+                match osc_packet {
+                    OscPacket::Message(osc_msg) => {
+                        self.handle_msg(osc_msg);
+                    }
+                    OscPacket::Bundle(osc_bundle) => {
+                        self.handle_bundle(osc_bundle);
+                    }
+                };
+            }
+            Err(error_msg) => {
+                println!("{}", error_msg);
+            }
+        }
+    }
+
+    fn handle_bundle(&self, bundle: OscBundle) {
+        // TODO: Proper error handling
+        let try_tagged = TaggedBundle::new(&bundle);
+        
+        match try_tagged {
+            Ok(tagged_bundle) => {
+                if &tagged_bundle.bundle_tag == "update_queue" {
+                    // TODO: Error handle
+                    let update_queue_msg = UpdateQueueMessage::from_bundle(tagged_bundle)
+                        .unwrap();
+
+                    // TODO: Doing it the wonky way first, but long-term we should be able
+                    // to pass <alias, vec::timedOsc> straight into update_queue
+
+                    let alias = update_queue_msg.alias.clone();
+
+                    let tick_msgs: Vec<_> = update_queue_msg.messages.iter()
+                        .map(|timed_msg: &TimedOscMessage| SequencerTickMessage {
+                            alias: alias.clone(),
+                            time: timed_msg.time,
+                            msg: OscPacket::Message(
+                                timed_msg.message.clone()
+                            ),
+                        })
+                        .collect();
+                    
+                    self.queue_data.lock().unwrap()
+                        .update_queue(tick_msgs);
+                    
+                }
+                else {
+                    println!("Unknown tag: {}", &tagged_bundle.bundle_tag)
+                }
+            },
+            Err(e) => println!("{}", e),
+        }   
+
+    }
+
+    fn handle_msg(&self, osc_msg: OscMessage) {
+        if osc_msg.addr == "/update_queue" {
+            
+        }
+        else if osc_msg.addr == "/reset_queue" {
+            // Reset by alias
+        }
+        else if osc_msg.addr == "/set_bpm" {
+            // Provide bpm var
+        }
+        else if osc_msg.addr == "/play" {
+            // No contents
+        }
+        else if osc_msg.addr == "/stop" {
+            // No contents
+        }
+    }
+}
+
+// Sequencer ticking
 fn main_loop(
     bpm: Arc<Mutex<RefCell<i32>>>, // Modified live via API
     queue_data: Arc<Mutex<ApplicationQueue>>, // Modified live via API
     state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
     publishing_client: Arc<Mutex<PublishingClient>>,
+    osc_client: Arc<Mutex<OSCClient>>,
 ) {
 
     thread::spawn(move || {
@@ -118,9 +220,18 @@ fn main_loop(
 
                     // The ZMQ posting
                     {
-                        let post_time = chrono::offset::Utc::now();
-                        let unwrapped = on_time.iter().filter(|t| t.message.clone().is_some()).map(|t| t.message.clone().unwrap()).collect();
-                        publishing_client.lock().unwrap().post_note(unwrapped, post_time.clone());
+                        //let post_time = chrono::offset::Utc::now();
+                        let unwrapped: Vec<_> = on_time.iter()
+                            .filter(|t| t.message.clone().is_some())
+                            .map(|t| t.message.clone().unwrap().msg)
+                            .collect();
+
+                        // TODO: Bundle send if necessary
+                        for packet in unwrapped {
+                            println!("DEBUG: Sending!");
+                            osc_client.lock().unwrap().send(packet);
+                            println!("DEBUG: Sent!");
+                        }
                     }
                 }
             }
@@ -169,7 +280,8 @@ fn main_loop(
                 let new_loop_start_time = match longest_sequence {
                     Some(seq) => seq.active_sequence.borrow().last_note_time,
                     None => {
-                        println!("WARN: No max time found");
+                        // TODO: Spammy before the first queue is created
+                        //println!("WARN: No max time found");
                         this_loop_time
                     }
                 };
