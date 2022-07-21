@@ -150,6 +150,8 @@ impl ApplicationQueue {
 
         for (alias, value) in grouped_by_alias {
 
+            println!("DEBUG: Alias {} updating ...", &alias);
+
             if value.is_empty() {
                 println!("Clearing empty queue data for {}", alias);
             }

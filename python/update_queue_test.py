@@ -2,6 +2,8 @@
 from pythonosc import udp_client
 from pythonosc import osc_bundle_builder
 from pythonosc import osc_message_builder
+from pythonosc import osc_server
+from pythonosc import dispatcher
 
 def create_msg(addr, args):
     msg = osc_message_builder.OscMessageBuilder(address=addr)
@@ -17,8 +19,8 @@ def create_timed(time, msg):
     return bundle.build()
 
 
-# Hardcoded default port of jdw-sc main application
-client = udp_client.SimpleUDPClient("127.0.0.1", 14447)
+# Hardcoded default port of jdw-sequencer main application
+client = udp_client.SimpleUDPClient("127.0.0.1", 14441)
 
 # TODO: Explain parts and name args
 main_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
@@ -26,8 +28,10 @@ main_bundle.add_content(create_msg("/bundle_info", ["update_queue"]))
 main_bundle.add_content(create_msg("/update_queue_info", ["python_test_queue"]))
 
 message_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
-message_bundle.add_content(create_timed(0.0, create_msg("/test", ["One"])))
-message_bundle.add_content(create_timed(1.0, create_msg("/test", ["Two"])))
+message_bundle.add_content(create_timed(0.5, create_msg("/test", ["... ..."])))
+message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
+message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
+message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
 
 main_bundle.add_content(message_bundle.build())
 
@@ -37,3 +41,12 @@ main_bundle.add_content(message_bundle.build())
 # The only solution is to split out and in parts 
 client.send(main_bundle.build())
 
+dispatcher = dispatcher.Dispatcher()
+dispatcher.map("/test", print)
+
+
+
+server = osc_server.ThreadingOSCUDPServer(
+    ("127.0.0.1", 14443), dispatcher) # Out-port of the sequencer application
+print("Serving on {}".format(server.server_address))
+server.serve_forever()

@@ -15,27 +15,57 @@ pub struct OSCClient {
 }
 
 impl OSCClient {
-
     pub fn new() -> OSCClient {
         // TODO: Replace with config
-        let addr = match SocketAddrV4::from_str("127.0.0.1:14447") {
+        let addr = match SocketAddrV4::from_str("127.0.0.1:14442") {
+            Ok(addr) => addr,
+            Err(e) => panic!("{}", e),
+        };
+
+        let sock = UdpSocket::bind(addr).unwrap();
+        let buf = [0u8; rosc::decoder::MTU];
+
+        // TODO: Replace with config
+        let addr_out = match SocketAddrV4::from_str("127.0.0.1:14443") {
+            Ok(addr) => addr,
+            Err(e) => panic!("{}", e),
+        };
+
+        OSCClient {
+            socket: sock,
+            out_addr: addr_out,
+            buf
+        }
+
+
+    }
+
+
+    pub fn send(&self, packet: OscPacket) {
+        self.socket.send_to(&encoder::encode(&packet).unwrap(), self.out_addr);
+    }
+}
+
+pub struct OSCPoller {
+    socket: UdpSocket,
+    buf: [u8; 1536]
+}
+
+impl OSCPoller {
+
+    pub fn new() -> OSCPoller {
+        // TODO: Replace with config
+        let addr = match SocketAddrV4::from_str("127.0.0.1:14441") {
             Ok(addr) => addr,
             Err(e) => panic!("{}", e),
         };
 
         let sock = UdpSocket::bind(addr).unwrap();
 
-        // TODO: Replace with config
-        let addr_out = match SocketAddrV4::from_str("127.0.0.1:14447") {
-            Ok(addr) => addr,
-            Err(e) => panic!("{}", e),
-        };
-
         let buf = [0u8; rosc::decoder::MTU];
 
-        OSCClient {
+        OSCPoller {
             socket: sock,
-            out_addr: addr_out,
             buf
         }
 
@@ -51,8 +81,5 @@ impl OSCClient {
         };
     }
 
-    pub fn send(&self, packet: OscPacket) {
-        self.socket.send_to(&encoder::encode(&packet).unwrap(), self.out_addr);
-    }
 }
 

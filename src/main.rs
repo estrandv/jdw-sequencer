@@ -2,6 +2,7 @@
 
 
 use std::{cell::RefCell, println, thread};
+use std::borrow::Borrow;
 
 use chrono::{DateTime, Utc, Duration};
 use osc_model::{TaggedBundle, UpdateQueueMessage, TimedOscMessage};
@@ -10,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use rosc::{OscMessage, OscPacket, OscBundle};
 use crate::zeromq::PublishingClient;
 use spin_sleep;
-use crate::osc_client::OSCClient;
+use crate::osc_client::{OSCClient, OSCPoller};
 use crate::queue::{ApplicationQueue, RealTimeSequence, SequenceHandler};
 
 mod model;
@@ -49,7 +50,9 @@ fn main() {
     // Get the main loop chugging before initializing the API
 
     // TODO: Structure for all this will need some more careful thinking
+    let osc_poller = OSCPoller::new();
     let osc_client = OSCClient::new();
+    let osc_poller_handle = Arc::new(Mutex::new(osc_poller));
     let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
     main_loop(
@@ -57,11 +60,11 @@ fn main() {
         queue_data.clone(),
         state_handle.clone(),
         client,
-    osc_client_handle.clone());
-
+        osc_client_handle.clone()
+    );
 
     let osc_read = OSCRead {
-        osc_client: osc_client_handle,
+        poller: osc_poller_handle,
         queue_data,
         state_handle,
         bpm
@@ -76,7 +79,7 @@ fn main() {
 
 // Handle all incoming messages
 struct OSCRead {
-    osc_client: Arc<Mutex<OSCClient>>,
+    poller: Arc<Mutex<OSCPoller>>,
     queue_data: Arc<Mutex<ApplicationQueue>>,
     state_handle: Arc<Mutex<StateHandle>>,
     bpm: Arc<Mutex<RefCell<i32>>>,
@@ -84,7 +87,7 @@ struct OSCRead {
 
 impl OSCRead {
     fn scan(&self) {
-        match self.osc_client.lock().unwrap().poll() {
+        match self.poller.lock().unwrap().poll() {
             Ok(osc_packet) => {
                 match osc_packet {
                     OscPacket::Message(osc_msg) => {
@@ -188,6 +191,7 @@ fn main_loop(
 
             //println!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
 
+
             let current_bpm = bpm.lock().unwrap().clone().into_inner();
             let reset_requested = state_handle.lock().unwrap().reset.clone().into_inner();
             let hard_stop_requested = state_handle.lock().unwrap().hard_stop.clone().into_inner();
@@ -204,7 +208,7 @@ fn main_loop(
             // MIDI Sync allegedly happens 24 times per beat
             let denominator = 1.0 / 24.0;
             if sync_counter >= denominator {
-                publishing_client.lock().unwrap().post_midi_sync();
+                //publishing_client.lock().unwrap().post_midi_sync();
                 sync_counter = sync_counter - denominator;
             }
 
@@ -228,16 +232,16 @@ fn main_loop(
 
                         // TODO: Bundle send if necessary
                         for packet in unwrapped {
-                            println!("DEBUG: Sending!");
                             osc_client.lock().unwrap().send(packet);
-                            println!("DEBUG: Sent!");
                         }
                     }
                 }
             }
 
+            let queues_exist = !queue_data.lock().unwrap().queue.clone().into_inner().is_empty();
+
             // Update the queues if a new queue payload has arrived  
-            if queue_data.lock().unwrap().updated.clone().into_inner() || state.is_empty() {
+            if queue_data.lock().unwrap().updated.clone().into_inner() || (state.is_empty() && queues_exist) {
                 println!("Updating queue...");
                 // Iterate the queues by alias 
                 for queue in queue_data.lock().unwrap().queue.clone().into_inner().iter() {
@@ -304,19 +308,24 @@ fn main_loop(
                     None => this_loop_time
                 };
 
-                println!(
-                    "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
-                    chrono::offset::Utc::now(),
-                    new_loop_start_time,
-                    last_next_loop_note_time
-                );
+                if !queue_data.lock().unwrap().queue.borrow().is_empty() {
+                    println!(
+                        "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
+                        chrono::offset::Utc::now(),
+                        new_loop_start_time,
+                        last_next_loop_note_time
+                    );
+                }
 
+                /*
                 publishing_client.lock().unwrap().post_loop_start(
                     new_loop_start_time,
                     bpm.lock().unwrap().clone().into_inner()
                 );
+                */
 
             }
+
 
             {
                 // Force reset means dump everything
@@ -351,6 +360,7 @@ fn main_loop(
                 println!("WARN: Operations performed (time: {}) exceed tick time, overflow...", time_taken);
                 spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
             } else {
+
 
                 //let remainder = TICK_TIME_US - time_taken;
                 let sleeper = spin_sleep::SpinSleeper::new(100);
