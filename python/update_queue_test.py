@@ -28,25 +28,18 @@ main_bundle.add_content(create_msg("/bundle_info", ["update_queue"]))
 main_bundle.add_content(create_msg("/update_queue_info", ["python_test_queue"]))
 
 message_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
-message_bundle.add_content(create_timed(0.5, create_msg("/test", ["... ..."])))
+message_bundle.add_content(create_timed(0.5, create_msg("/test", ["...."])))
 message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
 message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
 message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
 
 main_bundle.add_content(message_bundle.build())
 
-# TODO: Not working. There is an issue with the sequencer. 
-# The OSC client is constantly polling, so you can never get a lock on the out-sock
-# Poll needs to be constant not to miss anything
-# The only solution is to split out and in parts 
 client.send(main_bundle.build())
 
 dispatcher = dispatcher.Dispatcher()
 dispatcher.map("/test", print)
 
-
-
 server = osc_server.ThreadingOSCUDPServer(
     ("127.0.0.1", 14443), dispatcher) # Out-port of the sequencer application
-print("Serving on {}".format(server.server_address))
 server.serve_forever()

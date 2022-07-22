@@ -4,12 +4,12 @@
  */
 use std::cell::RefCell;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc,Duration};
+
+use chrono::{DateTime, Duration, Utc};
+use log::{debug, info};
 use rosc::OscPacket;
+
 use crate::midi_utils;
-use serde::{Deserialize, Serialize};
-
-
 
 /*
     Message to be executed on relative time for given alias,
@@ -52,9 +52,7 @@ impl RealTimeSequence {
         RealTimeSequence {notes: Vec::new(), last_note_time: chrono::offset::Utc::now()}
     }
 
-    // RestInputNote arrives in relative time format
-    // We create a sequence that notes the expected play times in real time units
-    // This way note play time is independent from program performance
+    // Note how relative time is converted to real time here
     pub fn new(notes: Vec<SequencerTickMessage>, start_time: DateTime<Utc>, bpm: i32) -> Self {
 
         let mut iter_time = start_time.clone();
@@ -80,7 +78,7 @@ impl RealTimeSequence {
         });
 
         let start_time = sequencer_notes.get(0).unwrap().start_time.clone();
-        println!("### New loop length: {:?}", iter_time.clone() - start_time);
+        debug!("### New loop length: {:?}", iter_time.clone() - start_time);
 
         RealTimeSequence {
             notes: sequencer_notes, last_note_time: iter_time
@@ -88,14 +86,14 @@ impl RealTimeSequence {
     }
 
     // Pop any notes whose trigger time is lesser or equal to the given current time
-    pub fn pop_at_time(&mut self, time: DateTime<Utc>) -> Vec<RealTimeSequencerTick> {
+    pub fn pop_at_time(&mut self, time: &DateTime<Utc>) -> Vec<RealTimeSequencerTick> {
         let candidates = self.notes
             .iter()
-            .filter(|n| n.start_time <= time)
+            .filter(|n| &n.start_time <= time)
             .map(|n| n.clone())
             .collect::<Vec<RealTimeSequencerTick>>();
 
-        self.notes.retain(|n| n.start_time > time);
+        self.notes.retain(|n| &n.start_time > time);
 
         candidates
     }
@@ -121,7 +119,7 @@ pub struct RealTimeSequencerTick {
  */
 #[derive(Debug, Clone)]
 pub struct UnprocessedSequence {
-    pub id: String, // Unique id, e.g. "mydrums" - when API queue() is called, this is the id referenced
+    pub alias: String, // Unique id, e.g. "mydrums" - when API queue() is called, this is the id referenced
     pub queue: RefCell<Vec<SequencerTickMessage>>, // Notes to replace the active sequence on next iteration. Changed via API queue() call.
 }
 
@@ -145,24 +143,22 @@ impl ApplicationQueue {
             grouped_by_alias.get_mut(&msg.alias).unwrap().push(msg);
         }
 
-        println!("Queue call received!");
-        //println!("Parsed queue message: {:?}", &grouped_by_alias);
+        info!("Queue call received!");
 
         for (alias, value) in grouped_by_alias {
 
-            println!("DEBUG: Alias {} updating ...", &alias);
+            info!("Alias {} updating ...", &alias);
 
             if value.is_empty() {
-                println!("Clearing empty queue data for {}", alias);
+                info!("Clearing queue data for {}", alias);
             }
 
             // Clear any pre-existing queue data of that alias
-            self.queue.borrow_mut().retain(|e| *e.id != alias);
-            //println!("Queueing: {:?} to {}", value.clone(), alias);
+            self.queue.borrow_mut().retain(|e| *e.alias != alias);
 
             // Create a new queue entry for the alias containing all the notes in the request
             self.queue.borrow_mut().push(UnprocessedSequence {
-                id: alias,
+                alias: alias,
                 queue: RefCell::new(value)
             });
 
@@ -172,17 +168,146 @@ impl ApplicationQueue {
     }
 }
 
+pub struct MasterHandler {
+    sequence_handlers: Vec<SequenceHandler>
+}
+
+impl MasterHandler {
+
+    pub fn new() -> MasterHandler {
+        MasterHandler {sequence_handlers: vec![]}
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sequence_handlers.is_empty()
+    }
+
+    pub fn all_sequences_finished(&self) -> bool {
+        // If there are no notes left to play, reset the sequencer by pushing queues into state
+        self.sequence_handlers.iter().all(|data| data.active_sequence.borrow().is_finished())
+    }
+
+    pub fn empty_all(&mut self) {
+        self.sequence_handlers = Vec::new();
+    }
+
+    pub fn shift_queues(&mut self, current_bpm: i32, this_loop_time: &DateTime<Utc>) {
+        // TODO: vars: this_loop_time, current_bpm
+
+        // We cannot rely on the current tick time to supply a new start time, since
+        // it might overshoot the final note time by some amount of microseconds.
+        // Instead we should find what the latest note time was and start from there.
+
+        let longest_sequence = self.sequence_handlers.iter()
+            .max_by_key(|seq| seq.active_sequence.borrow().last_note_time);
+
+        // Last note time is new start time
+        let new_loop_start_time = match longest_sequence {
+            Some(seq) => seq.active_sequence.borrow().last_note_time,
+            None => {
+                debug!("No max time found, using that of current loop.");
+                this_loop_time.clone()
+            }
+        };
+
+        for data in self.sequence_handlers.iter() {
+            if !data.queue.borrow().queue.borrow().is_empty() {
+                data.active_sequence.replace(RealTimeSequence::new(
+                    data.queue.borrow().queue.clone().into_inner(),
+                    new_loop_start_time,
+                    current_bpm.clone())
+                );
+            }
+        }
+
+        let longest_next = self.sequence_handlers.iter()
+            .max_by_key(|seq| seq.active_sequence.borrow().last_note_time);
+
+        let last_next_loop_note_time = match longest_next {
+            Some(seq) => seq.active_sequence.borrow().last_note_time,
+            None => this_loop_time.clone()
+        };
+
+        // TODO: Was conditional on queue: !self.queue_data.lock().unwrap().queue.borrow().is_empty()
+        // Not that this should happen in here anyway. ....
+        if true {
+            info!(
+                        "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
+                        chrono::offset::Utc::now(),
+                        new_loop_start_time,
+                        last_next_loop_note_time
+                    );
+        }
+
+        // TODO: Loop start out msg is posted here
+    }
+
+    pub fn replace_queues(&mut self, new_queues: Vec<UnprocessedSequence>) {
+        for queue in new_queues {
+            let existing = self.sequence_handlers.iter().find(|data| data.queue.borrow().alias == queue.alias);
+
+            // If a queue with the same id exists, we change the queue data according to
+            // request. If not, we create new queue data with an empty sequence to be
+            // populated the next time the queue replaces current.
+            match existing {
+                Some(old_data) => {
+                    old_data.queue.replace(queue.clone());
+                }
+                None => {
+                    let new_data = SequenceHandler {
+                        queue: RefCell::new(queue.clone()),
+                        active_sequence: RefCell::new(RealTimeSequence::new_empty()),
+                    };
+
+                    self.sequence_handlers.push(new_data);
+                }
+            }
+        }
+    }
+
+    pub fn pop_on_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
+
+        let mut all_messages: Vec<OscPacket> = Vec::new();
+
+        // Find messages matching the current time
+        for meta_data in self.sequence_handlers.iter_mut() {
+            let on_time = meta_data.active_sequence.get_mut().pop_at_time(time);
+
+            if !on_time.is_empty() {
+
+                // Post the messages to the out socket
+                {
+                    let unwrapped: Vec<_> = on_time.iter()
+                        .filter(|t| t.message.clone().is_some())
+                        .map(|t| t.message.clone().unwrap().msg)
+                        .collect();
+
+                    for packet in unwrapped {
+                        all_messages.push(packet);
+                    }
+                }
+            }
+        }
+
+        return all_messages;
+    }
+}
+
 mod tests {
-
     use chrono::Duration;
-
-    use super::{SequencerTickMessage, RealTimeSequence};
+    use rosc::{OscMessage, OscPacket};
+    use crate::{RealTimeSequence, SequencerTickMessage};
 
     #[test]
     fn sequence_empties() {
-        let input = RestInputNote {amplitude: 0.4, sustain_time: 0.3, reserved_time: 0.3, tone: 44.0};
 
-        let mut sequence = RealTimeSequence::new(vec![input], chrono::offset::Utc::now() - Duration::seconds(10), 120);
+        let msg = SequencerTickMessage {
+            alias: "test".to_string(),
+            time: 0.0,
+            msg: OscPacket::Message(OscMessage::from("/msg"))
+        };
+
+        let mut sequence = RealTimeSequence::new(vec![msg], chrono::offset::Utc::now() - Duration::seconds(10), 120);
 
         sequence.pop_at_time(chrono::offset::Utc::now());
 

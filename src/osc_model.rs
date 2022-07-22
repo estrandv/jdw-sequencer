@@ -1,4 +1,4 @@
-use rosc::{OscBundle, OscPacket, OscMessage};
+use rosc::{OscBundle, OscMessage, OscPacket};
 
 // TODO: Stand-in file until all osc handling is ported to a common library
 

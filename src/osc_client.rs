@@ -1,12 +1,12 @@
 extern crate rosc;
 
-use rosc::{OscPacket, decoder};
-use std::env;
 use std::net::{SocketAddr, SocketAddrV4, UdpSocket};
 use std::str::FromStr;
-use std::sync::Arc;
-use crate::OSCRead;
+
+use rosc::{OscPacket};
 use rosc::encoder;
+use crate::config;
+use crate::config::{APPLICATION_IN_PORT, APPLICATION_OUT_PORT, APPLICATION_OUT_SOCKET_PORT};
 
 pub struct OSCClient {
     socket: UdpSocket,
@@ -16,8 +16,7 @@ pub struct OSCClient {
 
 impl OSCClient {
     pub fn new() -> OSCClient {
-        // TODO: Replace with config
-        let addr = match SocketAddrV4::from_str("127.0.0.1:14442") {
+        let addr = match SocketAddrV4::from_str(&config::get_addr(APPLICATION_OUT_SOCKET_PORT)) {
             Ok(addr) => addr,
             Err(e) => panic!("{}", e),
         };
@@ -25,8 +24,7 @@ impl OSCClient {
         let sock = UdpSocket::bind(addr).unwrap();
         let buf = [0u8; rosc::decoder::MTU];
 
-        // TODO: Replace with config
-        let addr_out = match SocketAddrV4::from_str("127.0.0.1:14443") {
+        let addr_out = match SocketAddrV4::from_str(&config::get_addr(APPLICATION_OUT_PORT)) {
             Ok(addr) => addr,
             Err(e) => panic!("{}", e),
         };
@@ -36,8 +34,6 @@ impl OSCClient {
             out_addr: addr_out,
             buf
         }
-
-
     }
 
 
@@ -54,8 +50,7 @@ pub struct OSCPoller {
 impl OSCPoller {
 
     pub fn new() -> OSCPoller {
-        // TODO: Replace with config
-        let addr = match SocketAddrV4::from_str("127.0.0.1:14441") {
+        let addr = match SocketAddrV4::from_str(&config::get_addr(APPLICATION_IN_PORT)) {
             Ok(addr) => addr,
             Err(e) => panic!("{}", e),
         };
@@ -73,7 +68,7 @@ impl OSCPoller {
 
     pub fn poll(&mut self) -> Result<OscPacket, String> {
         return match self.socket.recv_from(&mut self.buf) {
-            Ok((size, addr)) => {
+            Ok((size, _)) => {
                 let (_, packet) = rosc::decoder::decode_udp(&self.buf[..size]).unwrap();
                 Ok(packet)
             }
