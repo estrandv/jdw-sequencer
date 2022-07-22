@@ -30,6 +30,7 @@ mod config;
 pub struct StateHandle {
     reset: RefCell<bool>,
     hard_stop: RefCell<bool>,
+    bpm: RefCell<i32>,
 }
 
 fn main() {
@@ -42,25 +43,27 @@ fn main() {
     let bpm = Arc::new(Mutex::new(RefCell::new(120)));
     let queue_data: Arc<Mutex<ApplicationQueue>> = Arc::new(Mutex::new(ApplicationQueue { updated: RefCell::new(false), queue: RefCell::new(Vec::new()) }));
 
-    let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle { reset: RefCell::new(false), hard_stop: RefCell::new(false) }));
+    let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle {
+        reset: RefCell::new(false), hard_stop: RefCell::new(false), bpm: RefCell::new(120)
+    }));
 
     let osc_poller = OSCPoller::new();
     let osc_client = OSCClient::new();
     let osc_poller_handle = Arc::new(Mutex::new(osc_poller));
     let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
-    // Start sequencer loop in separate thread
-
     let master_sequencer = MasterHandler::new();
+    let master_seq_handle = Arc::new(Mutex::new(master_sequencer));
 
+    // Start sequencer loop in separate thread
     let mut main_loop = SequencerTickLoop {
-        bpm: bpm.clone(),
         queue_data: queue_data.clone(),
         state_handle: state_handle.clone(),
         osc_client: osc_client_handle.clone(),
-        master_sequence_handler: Arc::new(Mutex::new(master_sequencer)),
+        master_sequence_handler: master_seq_handle.clone(),
         midi_sync_counter: 0.0
     };
+
 
     thread::spawn(move || {
         main_loop.run();
@@ -71,6 +74,7 @@ fn main() {
         queue_data,
         state_handle,
         bpm,
+        master_sequencer: master_seq_handle.clone()
     };
 
     loop {
@@ -86,6 +90,7 @@ struct OSCRead {
     queue_data: Arc<Mutex<ApplicationQueue>>,
     state_handle: Arc<Mutex<StateHandle>>,
     bpm: Arc<Mutex<RefCell<i32>>>,
+    master_sequencer: Arc<Mutex<MasterHandler>>
 }
 
 impl OSCRead {
@@ -133,6 +138,7 @@ impl OSCRead {
                         })
                         .collect();
 
+                    // TODO: Call master sequence handler update directly
                     self.queue_data.lock().unwrap()
                         .update_queue(tick_msgs);
                 } else {
@@ -144,20 +150,21 @@ impl OSCRead {
     }
 
     fn handle_msg(&self, osc_msg: OscMessage) {
-        if osc_msg.addr == "/reset_queue" {
-            // Reset by alias
-        } else if osc_msg.addr == "/set_bpm" {
-            // Provide bpm var
+        if osc_msg.addr == "/set_bpm" {
+            // TODO: Proper parsing and error handling
+            let contained_val = osc_msg.clone().args.get(0).unwrap().clone().int().unwrap();
+            self.state_handle.lock().unwrap().bpm.replace(contained_val);
         } else if osc_msg.addr == "/play" {
             // No contents
-        } else if osc_msg.addr == "/stop" {
-            // No contents
+        } else if osc_msg.addr == "/reset_all" {
+            self.state_handle.lock().unwrap().reset.replace(true);
+        } else if osc_msg.addr == "/hard_stop" {
+            self.state_handle.lock().unwrap().hard_stop.replace(true);
         }
     }
 }
 
 struct SequencerTickLoop {
-    bpm: Arc<Mutex<RefCell<i32>>>, // Modified live via API
     queue_data: Arc<Mutex<ApplicationQueue>>, // Modified live via API
     state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
     osc_client: Arc<Mutex<OSCClient>>,
@@ -205,7 +212,7 @@ impl SequencerTickLoop {
 
             debug!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
 
-            let current_bpm = self.bpm.lock().unwrap().clone().into_inner();
+            let current_bpm = self.state_handle.lock().unwrap().bpm.clone().into_inner();
             let reset_requested = self.state_handle.lock().unwrap().reset.clone().into_inner();
             let hard_stop_requested = self.state_handle.lock().unwrap().hard_stop.clone().into_inner();
 
@@ -270,9 +277,10 @@ impl SequencerTickLoop {
                 spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
             } else {
 
-                // TODO: Not a requirement, since even tick time is not required with the current system
-                //  of "pop at time". Maybe it wouldn't hurt? I have no idea how uneven microsecond tick-time
-                //  would affect "feel" of rhythm
+                // NOTE: Evening out the tick like this is not required,
+                //  since even tick time is not theoretically required to
+                //  catch any message by-time sufficiently for the human ear.
+                // Figured it was a nice-to-have anyway...
                 let remainder = TICK_TIME_US - time_taken;
                 sleeper.sleep(std::time::Duration::from_micros(remainder));
             }

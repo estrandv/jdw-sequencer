@@ -242,6 +242,9 @@ impl MasterHandler {
         // TODO: Loop start out msg is posted here
     }
 
+    // Use new_queues to replace the "coming up next" message sequence in each sequencer.
+    // All sequensers with an alias matching a new queue will be replaced.
+    // TODO: API might as well call this directly and skip the whole "was updated" bit completely
     pub fn replace_queues(&mut self, new_queues: Vec<UnprocessedSequence>) {
         for queue in new_queues {
             let existing = self.sequence_handlers.iter().find(|data| data.queue.borrow().alias == queue.alias);
@@ -265,6 +268,7 @@ impl MasterHandler {
         }
     }
 
+    // Pop all messages that match the given time from all contained sequencers, returning them as a combined vector
     pub fn pop_on_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
 
         let mut all_messages: Vec<OscPacket> = Vec::new();
