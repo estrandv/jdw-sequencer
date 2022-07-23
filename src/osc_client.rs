@@ -11,7 +11,6 @@ use crate::config::{APPLICATION_IN_PORT, APPLICATION_OUT_PORT, APPLICATION_OUT_S
 pub struct OSCClient {
     socket: UdpSocket,
     out_addr: SocketAddrV4,
-    buf: [u8; 1536]
 }
 
 impl OSCClient {
@@ -31,8 +30,7 @@ impl OSCClient {
 
         OSCClient {
             socket: sock,
-            out_addr: addr_out,
-            buf
+            out_addr: addr_out
         }
     }
 

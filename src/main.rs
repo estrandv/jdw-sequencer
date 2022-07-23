@@ -12,17 +12,16 @@ use simple_logger::SimpleLogger;
 use spin_sleep;
 
 use osc_model::{TaggedBundle, TimedOscMessage, UpdateQueueMessage};
-use queue::SequencerTickMessage;
-use crate::config::TICK_TIME_US;
 
+use crate::config::TICK_TIME_US;
 use crate::osc_client::{OSCClient, OSCPoller};
-use crate::queue::{ApplicationQueue, MasterHandler, RealTimeSequence, SequenceHandler};
+use crate::queue::MasterHandler;
 
 pub mod midi_utils;
 mod osc_client;
-mod queue;
 mod osc_model;
 mod config;
+mod queue;
 
 // /1000 for ms
 //const IDLE_TIME_MS: u64 = 200;
@@ -40,9 +39,6 @@ fn main() {
         .with_level(config::LOG_LEVEL)
         .init().unwrap();
 
-    let bpm = Arc::new(Mutex::new(RefCell::new(120)));
-    let queue_data: Arc<Mutex<ApplicationQueue>> = Arc::new(Mutex::new(ApplicationQueue { updated: RefCell::new(false), queue: RefCell::new(Vec::new()) }));
-
     let state_handle: Arc<Mutex<StateHandle>> = Arc::new(Mutex::new(StateHandle {
         reset: RefCell::new(false), hard_stop: RefCell::new(false), bpm: RefCell::new(120)
     }));
@@ -57,7 +53,6 @@ fn main() {
 
     // Start sequencer loop in separate thread
     let mut main_loop = SequencerTickLoop {
-        queue_data: queue_data.clone(),
         state_handle: state_handle.clone(),
         osc_client: osc_client_handle.clone(),
         master_sequence_handler: master_seq_handle.clone(),
@@ -71,9 +66,7 @@ fn main() {
 
     let osc_read = OSCRead {
         poller: osc_poller_handle,
-        queue_data,
         state_handle,
-        bpm,
         master_sequencer: master_seq_handle.clone()
     };
 
@@ -87,9 +80,7 @@ fn main() {
 // Handle all incoming messages
 struct OSCRead {
     poller: Arc<Mutex<OSCPoller>>,
-    queue_data: Arc<Mutex<ApplicationQueue>>,
     state_handle: Arc<Mutex<StateHandle>>,
-    bpm: Arc<Mutex<RefCell<i32>>>,
     master_sequencer: Arc<Mutex<MasterHandler>>
 }
 
@@ -123,24 +114,13 @@ impl OSCRead {
                     let update_queue_msg = UpdateQueueMessage::from_bundle(tagged_bundle)
                         .unwrap();
 
-                    // TODO: Doing it the wonky way first, but long-term we should be able
-                    // to pass <alias, vec::timedOsc> straight into update_queue
-
                     let alias = update_queue_msg.alias.clone();
 
-                    let tick_msgs: Vec<_> = update_queue_msg.messages.iter()
-                        .map(|timed_msg: &TimedOscMessage| SequencerTickMessage {
-                            alias: alias.clone(),
-                            time: timed_msg.time,
-                            msg: OscPacket::Message(
-                                timed_msg.message.clone()
-                            ),
-                        })
-                        .collect();
+                    log::info!("Updating queue for {}", &alias);
+                    self.master_sequencer.lock().unwrap().queue_sequence(
+                        &alias, update_queue_msg.messages
+                    );
 
-                    // TODO: Call master sequence handler update directly
-                    self.queue_data.lock().unwrap()
-                        .update_queue(tick_msgs);
                 } else {
                     info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
                 }
@@ -165,7 +145,6 @@ impl OSCRead {
 }
 
 struct SequencerTickLoop {
-    queue_data: Arc<Mutex<ApplicationQueue>>, // Modified live via API
     state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
     osc_client: Arc<Mutex<OSCClient>>,
     master_sequence_handler: Arc<Mutex<MasterHandler>>,
@@ -196,7 +175,6 @@ impl SequencerTickLoop {
     fn run(&mut self) {
 
         let mut last_loop_time: Option<DateTime<Utc>> = None;
-        let mut sync_counter: f32 = 0.0;
 
         let sleeper = spin_sleep::SpinSleeper::new(100);
 
@@ -231,23 +209,10 @@ impl SequencerTickLoop {
                 self.osc_client.lock().unwrap().send(packet);
             }
 
-            let queues_exist = !self.queue_data.lock().unwrap().queue.clone().into_inner().is_empty();
-            let queue_has_been_updated = self.queue_data.lock().unwrap().updated.clone().into_inner();
-            let no_active_sequencers = self.master_sequence_handler.lock().unwrap().is_empty();
-
-            // Update the queues if a new queue payload has arrived
-            if queue_has_been_updated || (no_active_sequencers && queues_exist) {
-                debug!("Updating queues...");
-
-                let new_queues = self.queue_data.lock().unwrap().queue.clone().into_inner();
-
-                self.master_sequence_handler.lock().unwrap().replace_queues(new_queues);
-                self.queue_data.lock().unwrap().updated.replace(false);
-            }
-
             // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
             if all_finished || reset_requested {
+                //log::info!("Shifting queues...");
                 self.master_sequence_handler.lock().unwrap().shift_queues(current_bpm, &this_loop_time);
 
                 // Second send, since the final tick of a sequence is also the first tick of the next one and
@@ -261,12 +226,10 @@ impl SequencerTickLoop {
 
             {
                 // Force reset means dump everything
+
+                // TODO: Method still relevant?
                 if reset_requested || hard_stop_requested {
                     self.master_sequence_handler.lock().unwrap().empty_all();
-                }
-
-                if hard_stop_requested {
-                    self.queue_data.lock().unwrap().queue.replace(Vec::new());
                 }
             }
 
