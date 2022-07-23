@@ -11,7 +11,7 @@ use rosc::{OscBundle, OscMessage, OscPacket};
 use simple_logger::SimpleLogger;
 use spin_sleep;
 
-use osc_model::{TaggedBundle, TimedOscMessage, UpdateQueueMessage};
+use osc_model::{TaggedBundle, TimedOSCPacket, UpdateQueueMessage};
 
 use crate::config::TICK_TIME_US;
 use crate::osc_client::{OSCClient, OSCPoller};

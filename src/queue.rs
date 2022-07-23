@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
 use rosc::OscPacket;
 use serde::de::Unexpected::Seq;
-use crate::{midi_utils, TimedOscMessage};
+use crate::{midi_utils, TimedOSCPacket};
 
 
 /*
@@ -28,15 +28,14 @@ impl RealTimePacketSequence {
     }
 
     // Add actual calculated execution time for each message and use that vector to construct a sequence
-    pub fn new(messages: Vec<TimedOscMessage>, start_time: DateTime<Utc>, bpm: i32) -> RealTimePacketSequence {
+    pub fn new(messages: Vec<TimedOSCPacket>, start_time: DateTime<Utc>, bpm: i32) -> RealTimePacketSequence {
 
         let mut iter_time = start_time.clone();
         let mut real_time_packets : Vec<RealTimePacket> = Vec::new();
 
         for message in messages {
-            let packet = OscPacket::Message(message.message);
             let wrapped_packet = RealTimePacket {
-                packet: Some(packet),
+                packet: Some(message.packet),
                 time: iter_time.clone()
             };
 
@@ -96,7 +95,7 @@ impl RealTimePacketSequence {
  */
 pub struct Sequencer {
     active_sequence: RealTimePacketSequence,
-    queue: Vec<TimedOscMessage>
+    queue: Vec<TimedOSCPacket>
 }
 
 impl Sequencer {
@@ -119,7 +118,7 @@ impl Sequencer {
         }
     }
 
-    pub fn set_queue(&mut self, new_queue: Vec<TimedOscMessage>) {
+    pub fn set_queue(&mut self, new_queue: Vec<TimedOSCPacket>) {
         self.queue = new_queue;
     }
 
@@ -197,7 +196,7 @@ impl SequencerHandler {
 
     // Queue a set of timed messages for a given sequencer alias.
     // If no sequencer with the given alias exists, it will be created.
-    pub fn queue_sequence(&mut self, alias: &str, new_queue: Vec<TimedOscMessage>) {
+    pub fn queue_sequence(&mut self, alias: &str, new_queue: Vec<TimedOSCPacket>) {
         let existing = self.sequences.iter_mut()
             .find(|data| &data.0.clone() == alias)
             .map(|tuple| tuple.1);

@@ -94,6 +94,12 @@ impl TaggedBundle {
         })
     }
 
+    fn get_packet(&self, content_index: usize) -> Result<OscPacket, String> {
+        self.contents.get(content_index)
+            .map(|pct| pct.clone())
+            .ok_or("Failed to fetch packet".to_string())
+    }
+
     fn get_message(&self, content_index: usize) -> Result<OscMessage, String> {
         self.contents.get(content_index)
             .map(|pct| pct.clone())
@@ -129,26 +135,26 @@ impl TaggedBundle {
     [... msg ...]
  */
 #[derive(Debug, Clone)]
-pub struct TimedOscMessage {
+pub struct TimedOSCPacket {
     pub time: f32,
-    pub message: OscMessage
+    pub packet: OscPacket
 }
 
-impl TimedOscMessage {
-    pub fn from_bundle(bundle: TaggedBundle) -> Result<TimedOscMessage, String>{
+impl TimedOSCPacket {
+    pub fn from_bundle(bundle: TaggedBundle) -> Result<TimedOSCPacket, String>{
         if &bundle.bundle_tag != "timed_msg" {
             return Err(format!("Attempted to parse {} as timed_msg bundle", &bundle.bundle_tag));
         }
 
         let info_msg = bundle.get_message(0)?;
-        let actual_msg = bundle.get_message(1)?;
+        let actual_msg = bundle.get_packet(1)?;
 
         info_msg.expect_addr("/timed_msg_info")?;
         let time = info_msg.get_float_at(0, "time")?;
 
-        Ok(TimedOscMessage {
+        Ok(TimedOSCPacket {
             time,
-            message: actual_msg
+            packet: actual_msg
         })
 
     }
@@ -164,7 +170,7 @@ impl TimedOscMessage {
 */
 pub struct UpdateQueueMessage {
     pub alias: String,
-    pub messages: Vec<TimedOscMessage>,
+    pub messages: Vec<TimedOSCPacket>,
 }
 
 impl UpdateQueueMessage {
@@ -178,12 +184,12 @@ impl UpdateQueueMessage {
         let alias = info_msg.get_string_at(0, "alias")?;
 
         let msg_bundle = bundle.get_bundle(1)?;
-        let mut contained_timed_messages: Vec<TimedOscMessage> = Vec::new();
+        let mut contained_timed_messages: Vec<TimedOSCPacket> = Vec::new();
         for packet in msg_bundle.content {
             match packet {
                 OscPacket::Bundle(bun) => {
                     let tagged_bun = TaggedBundle::new(&bun)?;
-                    let timed_message = TimedOscMessage::from_bundle(tagged_bun)?;
+                    let timed_message = TimedOSCPacket::from_bundle(tagged_bun)?;
                     contained_timed_messages.push(timed_message);
                 },
                 _ => println!("Found a non-bundle in the update queue"),
