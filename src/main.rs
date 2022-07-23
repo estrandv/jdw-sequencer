@@ -15,7 +15,7 @@ use osc_model::{TaggedBundle, TimedOscMessage, UpdateQueueMessage};
 
 use crate::config::TICK_TIME_US;
 use crate::osc_client::{OSCClient, OSCPoller};
-use crate::queue::MasterHandler;
+use crate::queue::SequencerHandler;
 
 pub mod midi_utils;
 mod osc_client;
@@ -48,7 +48,7 @@ fn main() {
     let osc_poller_handle = Arc::new(Mutex::new(osc_poller));
     let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
-    let master_sequencer = MasterHandler::new();
+    let master_sequencer = SequencerHandler::new();
     let master_seq_handle = Arc::new(Mutex::new(master_sequencer));
 
     // Start sequencer loop in separate thread
@@ -81,7 +81,7 @@ fn main() {
 struct OSCRead {
     poller: Arc<Mutex<OSCPoller>>,
     state_handle: Arc<Mutex<StateHandle>>,
-    master_sequencer: Arc<Mutex<MasterHandler>>
+    master_sequencer: Arc<Mutex<SequencerHandler>>
 }
 
 impl OSCRead {
@@ -147,7 +147,7 @@ impl OSCRead {
 struct SequencerTickLoop {
     state_handle: Arc<Mutex<StateHandle>>, // Modified live via API
     osc_client: Arc<Mutex<OSCClient>>,
-    master_sequence_handler: Arc<Mutex<MasterHandler>>,
+    master_sequence_handler: Arc<Mutex<SequencerHandler>>,
     midi_sync_counter: f32
 }
 
