@@ -35,6 +35,7 @@ message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
 
 main_bundle.add_content(message_bundle.build())
 
+client.send(create_msg("/set_bpm", [180]))
 client.send(main_bundle.build())
 
 dispatcher = dispatcher.Dispatcher()
