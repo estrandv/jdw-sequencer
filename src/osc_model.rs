@@ -2,8 +2,6 @@ use rosc::{OscBundle, OscMessage, OscPacket};
 
 use jdw_osc_lib::{OscArgHandler, TaggedBundle, TimedOSCPacket};
 
-// TODO: Non-standard implementations below
-
 /*
     [info: update_queue]
     [update_queue_info: "my_alias"]

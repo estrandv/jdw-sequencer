@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use jdw_osc_lib::TaggedBundle;
-use log::{debug, info};
-use rosc::{OscBundle, OscMessage, OscPacket};
+use log::{debug, info, warn};
+use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use simple_logger::SimpleLogger;
 use spin_sleep;
 
@@ -105,22 +105,27 @@ impl OSCRead {
     }
 
     fn handle_bundle(&self, bundle: OscBundle) {
-        // TODO: Proper error handling
         let try_tagged = TaggedBundle::new(&bundle);
 
         match try_tagged {
             Ok(tagged_bundle) => {
                 if &tagged_bundle.bundle_tag == "update_queue" {
-                    // TODO: Error handle
-                    let update_queue_msg = UpdateQueueMessage::from_bundle(tagged_bundle)
-                        .unwrap();
+                    let update_queue_msg_res = UpdateQueueMessage::from_bundle(tagged_bundle);
 
-                    let alias = update_queue_msg.alias.clone();
+                    match update_queue_msg_res {
+                        Ok(update_queue_msg) => {
 
-                    log::info!("Updating queue for {}", &alias);
-                    self.master_sequencer.lock().unwrap().queue_sequence(
-                        &alias, update_queue_msg.messages
-                    );
+                            let alias = update_queue_msg.alias.clone();
+
+                            info!("Updating queue for {}", &alias);
+                            self.master_sequencer.lock().unwrap().queue_sequence(
+                                &alias, update_queue_msg.messages
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse update_queue message: {}", e);
+                        }
+                    }
 
                 } else {
                     info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
@@ -132,9 +137,22 @@ impl OSCRead {
 
     fn handle_msg(&self, osc_msg: OscMessage) {
         if osc_msg.addr == "/set_bpm" {
-            // TODO: Proper parsing and error handling
-            let contained_val = osc_msg.clone().args.get(0).unwrap().clone().int().unwrap();
-            self.state_handle.lock().unwrap().bpm.replace(contained_val);
+            let args = osc_msg.clone().args;
+            let arg = args.get(0).clone();
+            match arg {
+                None => {
+                    warn!("Unable to parse set_bpm message (missing arg)")
+                }
+                Some(val) => {
+                    match val.clone().int() {
+                        None => {warn!("set_bpm arg not an int")}
+                        Some(contained_val) => {
+                            self.state_handle.lock().unwrap().bpm.replace(contained_val);
+
+                        }
+                    }
+                }
+            }
         } else if osc_msg.addr == "/play" {
             // No contents
         } else if osc_msg.addr == "/reset_all" {
@@ -153,25 +171,6 @@ struct SequencerTickLoop {
 }
 
 impl SequencerTickLoop {
-
-    // TODO: Not the cleanest method, especially with the mutable pass...
-    fn midi_sync(
-        &mut self,
-        elapsed_time: &Duration,
-        current_bpm: i32
-    ) {
-
-        let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
-        self.midi_sync_counter+= elapsed_beats;
-
-        // MIDI Sync allegedly happens 24 times per beat
-        let denominator = 1.0 / 24.0;
-        if self.midi_sync_counter >= denominator {
-            // TODO: Send a /midi_sync message
-            self.midi_sync_counter = self.midi_sync_counter - denominator;
-        }
-    }
-
 
     fn run(&mut self) {
 
@@ -213,8 +212,17 @@ impl SequencerTickLoop {
             // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
             if all_finished || reset_requested {
-                //log::info!("Shifting queues...");
                 self.master_sequence_handler.lock().unwrap().shift_queues(current_bpm, &this_loop_time);
+
+                self.osc_client.lock().unwrap().send(
+                    OscPacket::Message(OscMessage {
+                        addr: "/jdw_seq_loop_start".to_string(),
+                        args: vec![
+                            // TODO: Start time is the internal one from "shift queues", should prob be sent
+                            // in some common date-string format
+                        ]
+                    })
+                );
 
                 // Second send, since the final tick of a sequence is also the first tick of the next one and
                 //  new messages might be available after the shift
@@ -228,7 +236,6 @@ impl SequencerTickLoop {
             {
                 // Force reset means dump everything
 
-                // TODO: Method still relevant?
                 if reset_requested || hard_stop_requested {
                     self.master_sequence_handler.lock().unwrap().empty_all();
                 }
@@ -237,7 +244,7 @@ impl SequencerTickLoop {
             let dur = Utc::now().time() - this_loop_time.time();
             let time_taken = dur.num_microseconds().unwrap_or(0) as u64;
             if time_taken > TICK_TIME_US {
-                log::warn!("Operations performed (time: {}) exceed tick time, overflow...", time_taken);
+                warn!("Operations performed (time: {}) exceed tick time, overflow...", time_taken);
                 spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
             } else {
 
@@ -252,4 +259,27 @@ impl SequencerTickLoop {
             debug!("End loop: {}", this_loop_time);
         } // end loop
     }
+
+    fn midi_sync(
+        &mut self,
+        elapsed_time: &Duration,
+        current_bpm: i32
+    ) {
+
+        let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
+        self.midi_sync_counter+= elapsed_beats;
+
+        // MIDI Sync allegedly happens 24 times per beat
+        let denominator = 1.0 / 24.0;
+        if self.midi_sync_counter >= denominator {
+            self.osc_client.lock().unwrap().send(
+                OscPacket::Message(OscMessage {
+                    addr: "/midi_sync".to_string(),
+                    args: vec![]
+                })
+            );
+            self.midi_sync_counter = self.midi_sync_counter - denominator;
+        }
+    }
+
 }

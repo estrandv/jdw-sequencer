@@ -23,21 +23,19 @@ pub struct RealTimePacketSequence {
 }
 
 impl RealTimePacketSequence {
-
     pub fn empty() -> RealTimePacketSequence {
-        RealTimePacketSequence {timed_packets: vec![]}
+        RealTimePacketSequence { timed_packets: vec![] }
     }
 
     // Add actual calculated execution time for each message and use that vector to construct a sequence
     pub fn new(messages: Vec<TimedOSCPacket>, start_time: DateTime<Utc>, bpm: i32) -> RealTimePacketSequence {
-
         let mut iter_time = start_time.clone();
-        let mut real_time_packets : Vec<RealTimePacket> = Vec::new();
+        let mut real_time_packets: Vec<RealTimePacket> = Vec::new();
 
         for message in messages {
             let wrapped_packet = RealTimePacket {
                 packet: Some(message.packet),
-                time: iter_time.clone()
+                time: iter_time.clone(),
             };
 
             real_time_packets.push(wrapped_packet);
@@ -50,14 +48,13 @@ impl RealTimePacketSequence {
         // We thus add a final dummy tick to let the real last message keep its padding time
         let final_tick = RealTimePacket {
             packet: None,
-            time: iter_time.clone()
+            time: iter_time.clone(),
         };
         real_time_packets.push(final_tick);
 
         RealTimePacketSequence {
             timed_packets: real_time_packets
         }
-
     }
 
 
@@ -88,7 +85,6 @@ impl RealTimePacketSequence {
 
         self.timed_packets.iter().last().unwrap().time.clone()
     }
-
 }
 
 /*
@@ -96,15 +92,14 @@ impl RealTimePacketSequence {
  */
 pub struct Sequencer {
     active_sequence: RealTimePacketSequence,
-    queue: Vec<TimedOSCPacket>
+    queue: Vec<TimedOSCPacket>,
 }
 
 impl Sequencer {
-
     pub fn new() -> Self {
         Sequencer {
             active_sequence: RealTimePacketSequence::empty(),
-            queue: vec![]
+            queue: vec![],
         }
     }
 
@@ -114,7 +109,7 @@ impl Sequencer {
             self.active_sequence = RealTimePacketSequence::new(
                 self.queue.clone(),
                 start_time.clone(),
-                bpm
+                bpm,
             );
         }
     }
@@ -122,18 +117,16 @@ impl Sequencer {
     pub fn set_queue(&mut self, new_queue: Vec<TimedOSCPacket>) {
         self.queue = new_queue;
     }
-
 }
 
 // Registry of all active sequencers and their aliases
 pub struct SequencerHandler {
-    sequences: HashMap<String, Sequencer>
+    sequences: HashMap<String, Sequencer>,
 }
 
 impl SequencerHandler {
-
     pub fn new() -> SequencerHandler {
-        SequencerHandler { sequences: HashMap::new()}
+        SequencerHandler { sequences: HashMap::new() }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -181,18 +174,12 @@ impl SequencerHandler {
             None => this_loop_time.clone()
         };
 
-        // TODO: Was conditional on queue: !self.queue_data.lock().unwrap().queue.borrow().is_empty()
-        // Not that this should happen in here anyway. ....
-        if false {
-            log::info!(
-                        "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
-                        chrono::offset::Utc::now(),
-                        new_loop_start_time,
-                        last_next_loop_note_time
-                    );
-        }
-
-        // TODO: Loop start out msg is posted here
+        log::info!(
+            "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
+            chrono::offset::Utc::now(),
+            new_loop_start_time,
+            last_next_loop_note_time
+        );
     }
 
     // Queue a set of timed messages for a given sequencer alias.
@@ -209,12 +196,10 @@ impl SequencerHandler {
             new_seq.set_queue(new_queue);
             self.sequences.insert(alias.to_string(), new_seq);
         }
-
     }
 
     // Pop all messages that match the given time from all contained sequencers, returning them as a combined vector
     pub fn pop_on_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
-
         let mut all_messages: Vec<OscPacket> = Vec::new();
 
         // Find messages matching the current time
@@ -239,10 +224,6 @@ impl SequencerHandler {
 
 // TODO
 mod tests {
-
     #[test]
-    fn sequence_empties() {
-
-    }
-
+    fn sequence_empties() {}
 }
