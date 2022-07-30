@@ -27,20 +27,37 @@ main_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY
 main_bundle.add_content(create_msg("/bundle_info", ["update_queue"]))
 main_bundle.add_content(create_msg("/update_queue_info", ["python_test_queue"]))
 
-message_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
-message_bundle.add_content(create_timed(0.5, create_msg("/test", ["...."])))
-message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
-message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
-message_bundle.add_content(create_timed(0.5, create_msg("/test", ["."])))
+bun = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
 
-main_bundle.add_content(message_bundle.build())
+#message_bundle.add_content(create_timed(1.0, create_msg("/play_sample", ["ext_id_1", "example", 2, "bd", "ofs", 0.13])))
+def simple_sample(family, index, time, offset):
+    return create_timed(time, create_msg("/play_sample", ["ext_id_", "example", index, family, "ofs", offset]))
 
-client.send(create_msg("/set_bpm", [180]))
+def simple_note(time, gate, freq):
+    bun.add_content(create_timed(time, create_msg("/note_on_timed", ["gentle", "gentle_" + str(freq), gate, "freq", freq, "relT", 0.5])))
+
+simple_note(0.5, 3.2, 180.0)
+bun.add_content(simple_sample("bd", 1, 0.5, 0.02))
+#simple_note(0.0, 0.1, 320.0)
+bun.add_content(simple_sample("bd", 0, 1.0, 0.08))
+#simple_note(0.0, 0.2, 180.0)
+bun.add_content(simple_sample("bd", 2, 1.0, 0.08))
+#simple_note(0.25, 0.3, 200.0)
+bun.add_content(simple_sample("sn", 0, 1.0, 0.08))
+
+# Other test: See if "feel" is different when not using sample lookup
+#message_bundle.add_content(create_timed(0.5, create_msg("/note_on_timed", ["sampler", "gentle_x", 0.5, "buf", 1.0])))
+#message_bundle.add_content(create_timed(0.5, create_msg("/note_on_timed", ["sampler", "gentle_x", 0.5, "buf", 1.0])))
+#message_bundle.add_content(create_timed(1.0, create_msg("/note_on_timed", ["sampler", "gentle_x", 0.5, "buf", 2.0])))
+
+main_bundle.add_content(bun.build())
+
+client.send(create_msg("/set_bpm", [220]))
 client.send(main_bundle.build())
 
-dispatcher = dispatcher.Dispatcher()
-dispatcher.map("/test", print)
+#dispatcher = dispatcher.Dispatcher()
+#dispatcher.map("/play_sample", print)
 
-server = osc_server.ThreadingOSCUDPServer(
-    ("127.0.0.1", 14443), dispatcher) # Out-port of the sequencer application
-server.serve_forever()
+#server = osc_server.ThreadingOSCUDPServer(
+#    ("127.0.0.1", 13331), dispatcher) # Out-port of the sequencer application
+#server.serve_forever()

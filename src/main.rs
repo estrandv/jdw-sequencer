@@ -107,8 +107,12 @@ impl OSCRead {
     fn handle_bundle(&self, bundle: OscBundle) {
         let try_tagged = TaggedBundle::new(&bundle);
 
+        info!("Tagged bundle received! {:?}", &bundle);
+        
         match try_tagged {
             Ok(tagged_bundle) => {
+
+
                 if &tagged_bundle.bundle_tag == "update_queue" {
                     let update_queue_msg_res = UpdateQueueMessage::from_bundle(tagged_bundle);
 
@@ -200,8 +204,8 @@ impl SequencerTickLoop {
                 self.state_handle.lock().unwrap().hard_stop.replace(false);
             }
 
-
-            self.midi_sync(&elapsed_time, current_bpm);
+            // TODO: Inconvenient spam when not using router
+            //self.midi_sync(&elapsed_time, current_bpm);
 
             // First send here.
             let messages = self.master_sequence_handler.lock().unwrap().pop_on_time(&this_loop_time);
