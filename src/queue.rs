@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
 use jdw_osc_lib::TimedOSCPacket;
+use log::info;
 use rosc::OscPacket;
 use serde::de::Unexpected::Seq;
 use crate::{midi_utils};
@@ -89,29 +90,96 @@ impl RealTimePacketSequence {
 
 /*
     Machine containing an active sequence and the queued data it will be replaced with once done/shifted.
+    TODO: WIll take on much of RealTimePacketSequence, remove that later
  */
 pub struct Sequencer {
-    active_sequence: RealTimePacketSequence,
+    active_sequence: Vec<TimedOSCPacket>,
     queue: Vec<TimedOSCPacket>,
+    current_beat: f32,
+    end_beat: f32,
 }
 
 impl Sequencer {
     pub fn new() -> Self {
         Sequencer {
-            active_sequence: RealTimePacketSequence::empty(),
+            active_sequence: vec![],
             queue: vec![],
+            current_beat: 0.0,
+            end_beat: 0.0
         }
     }
 
-    // Replace active sequence with the queued one
-    pub fn shift_queue(&mut self, start_time: &DateTime<Utc>, bpm: i32) {
-        if !self.queue.is_empty() {
-            self.active_sequence = RealTimePacketSequence::new(
-                self.queue.clone(),
-                start_time.clone(),
-                bpm,
-            );
+    // Add elapsed time to current_beat, pop any passed messages, and return them
+    pub fn tick_and_return(&mut self, elapsed_beats: &f32) -> Vec<OscPacket> {
+
+        // If we keep ticking the time after finishing, we will build up
+        // an overshoot big enough to skip the whole next loop. So we don't.
+        if !&self.is_finished() {
+
+            self.current_beat += elapsed_beats;
+            let candidates: Vec<_> = self.active_sequence
+                .iter()
+                .filter(|n| &n.time <= &self.current_beat)
+                .map(|n| n.clone().packet.clone())
+                .collect();
+
+            let beat = self.current_beat;
+            self.active_sequence.retain(|seq| &seq.time > &beat);
+
+            if !&candidates.is_empty() {
+                info!("Tick time is now {} and {} candidates were found. Remaining: {}.", self.current_beat, candidates.len(), &self.active_sequence.len());
+            }
+
+            return candidates;
         }
+
+        return vec![];
+
+    }
+
+    // Replace active sequence with the queued one
+    // Return any times we've already passed (e.g. messages with time 0.0)
+    pub fn shift_queue(&mut self) -> Vec<OscPacket> {
+        let last_end_time = self.end_beat;
+
+        if !&self.queue.is_empty() {
+
+            let mut new_sequence: Vec<TimedOSCPacket> = vec![];
+            let mut new_timeline: f32 = 0.0;
+
+            // Note how the only difference is that the active sequence has incremental, relative time
+            // for each note.
+            for packet in &self.queue {
+                new_sequence.push(TimedOSCPacket {
+                    time: new_timeline,
+                    packet: packet.packet.clone()
+                });
+                new_timeline += packet.time;
+            }
+
+            // TODO: Always tricky with shifts - be mindful of cases like
+            // last tick overshooting the end - do we do carryover or simply save it when
+            // passing next elapsed_beats?
+
+            // Here's how to carry over, either way
+            let overshoot = if self.current_beat > last_end_time && last_end_time > 0.0 {
+                self.current_beat - last_end_time
+            } else {0.0};
+
+            self.current_beat = overshoot;
+            self.active_sequence = new_sequence;
+            self.end_beat = new_timeline; // Includes the "ring out" time of the last packet
+            info!("Current beat starts at {}", self.current_beat);
+        }
+
+        // Since we now are at least on 0.0 (possibly even on a bit of overshoot), we should get
+        // any early messages with this even though elapsed_beats is zero.
+        self.tick_and_return(&0.0)
+    }
+
+
+    pub fn is_finished(&self) -> bool {
+        self.current_beat >= self.end_beat
     }
 
     pub fn set_queue(&mut self, new_queue: Vec<TimedOSCPacket>) {
@@ -135,51 +203,40 @@ impl SequencerHandler {
 
     pub fn all_sequences_finished(&self) -> bool {
         // If there are no messages left to send for any sequence (all popped; all times passed)
-        self.sequences.iter().all(|tuple| tuple.1.active_sequence.is_finished())
+        self.sequences.iter().all(|tuple| tuple.1.is_finished())
     }
 
     pub fn empty_all(&mut self) {
         self.sequences = HashMap::new();
     }
 
-    // Determine a start time for the next loop and use that to shift all contained sequencer queues
-    // (=start a new loop)
-    pub fn shift_queues(&mut self, current_bpm: i32, this_loop_time: &DateTime<Utc>) {
+    // Call shift_queues on all contained sequences, returning a combined result of packets
+    pub fn shift_queues(&mut self) -> Vec<OscPacket> {
 
-        // We cannot rely on the current tick time to supply a new start time, since
-        // it might overshoot the final note time by some amount of microseconds.
-        // Instead we should find what the latest note time was and start from there.
+        // TODO: Potential bug here too - what if shift happens later than the last tick,
+        // how does that handle overshoot? Might be that "tick again after shift" solves that
+        // but bear in mind! See the long rant in the main loop.
 
-        let longest_sequence = self.sequences.iter()
-            .max_by_key(|seq| seq.1.active_sequence.get_end_time());
+        let collected = self.sequences.iter_mut()
+            .map(|seq| seq.1.shift_queue())
+            .flatten()
+            .collect();
 
-        // Last note time is new start time
-        let new_loop_start_time = match longest_sequence {
-            Some(seq) => seq.1.active_sequence.get_end_time(),
-            None => {
-                log::debug!("No max time found, using that of current loop.");
-                this_loop_time.clone()
-            }
-        };
+        collected
+    }
 
-        for data in self.sequences.iter_mut() {
-            data.1.shift_queue(&new_loop_start_time, current_bpm);
-        }
+    // Like the above, but dynamically shifting any sequencer that has finished instead of
+    // manually force-shifting everything.
+    // Useful if sequencers are running in individual mode.
+    pub fn shift_finished(&mut self) -> Vec<OscPacket> {
 
-        let longest_next = self.sequences.iter()
-            .max_by_key(|seq| seq.1.active_sequence.get_end_time());
+        let collected = self.sequences.iter_mut()
+            .filter(|seq| seq.1.is_finished())
+            .map(|seq| seq.1.shift_queue())
+            .flatten()
+            .collect();
 
-        let last_next_loop_note_time = match longest_next {
-            Some(seq) => seq.1.active_sequence.get_end_time(),
-            None => this_loop_time.clone()
-        };
-
-        log::info!(
-            "Starting a new loop at time: {}, new loop start time: {}, end time: {}",
-            chrono::offset::Utc::now(),
-            new_loop_start_time,
-            last_next_loop_note_time
-        );
+        collected
     }
 
     // Queue a set of timed messages for a given sequencer alias.
@@ -199,12 +256,12 @@ impl SequencerHandler {
     }
 
     // Pop all messages that match the given time from all contained sequencers, returning them as a combined vector
-    pub fn pop_on_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
+    pub fn tick_and_return_all(&mut self, elapsed_beats: &f32) -> Vec<OscPacket> {
         let mut all_messages: Vec<OscPacket> = Vec::new();
 
         // Find messages matching the current time
         for meta_data in self.sequences.iter_mut() {
-            let on_time = meta_data.1.active_sequence.pop_at_time(time);
+            let on_time = meta_data.1.tick_and_return(elapsed_beats);
 
             if !on_time.is_empty() {
 

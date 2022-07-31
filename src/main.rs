@@ -3,6 +3,7 @@
 
 use std::{cell::RefCell, println, thread};
 use std::borrow::Borrow;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
@@ -207,16 +208,23 @@ impl SequencerTickLoop {
             // TODO: Inconvenient spam when not using router
             //self.midi_sync(&elapsed_time, current_bpm);
 
+            let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
+
             // First send here.
-            let messages = self.master_sequence_handler.lock().unwrap().pop_on_time(&this_loop_time);
+            let messages = self.master_sequence_handler.lock().unwrap().tick_and_return_all(&elapsed_beats);
             for packet in messages {
                 self.osc_client.lock().unwrap().send(packet);
             }
 
+            // TODO: This should then be a config
+            let mode_individual = true;
+
             // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
             if all_finished || reset_requested {
-                self.master_sequence_handler.lock().unwrap().shift_queues(current_bpm, &this_loop_time);
+
+                // On shift, we start immediately on the new timeline (getting any 0.0 packets as oversend)
+                let oversend = self.master_sequence_handler.lock().unwrap().shift_queues();
 
                 self.osc_client.lock().unwrap().send(
                     OscPacket::Message(OscMessage {
@@ -230,11 +238,53 @@ impl SequencerTickLoop {
 
                 // Second send, since the final tick of a sequence is also the first tick of the next one and
                 //  new messages might be available after the shift
-                let messages = self.master_sequence_handler.lock().unwrap().pop_on_time(&this_loop_time);
-                for packet in messages {
+
+                // TODO: Single-send idea.
+                // - Return overshoot notes when shift happens
+                // - Must not even necessarily be an overshoot - just return the 0.0 ones
+                // - Still have to send again... but in a less repetitive way
+                // - Overshoot is tricky as usual: Some time HAS passed since the elapsed beats calculation
+                //  - Time until last tick is completely negligible however. The problem is if it shifts the total somehow.
+                /*
+                    EXPERIMENT: SHift times
+
+                    loop 2 start time: 10
+                    tick: Every 3 seconds
+                    end time: 10
+                    last tick is at: 12 seconds
+                    So even as the tick starts we have an overshoot of 2 seconds.
+                    We immediately send the last note by ticking.
+                    We shift queues. The timeline in the sequencer overshoots and is now 2.
+                    Time is now closer to "13" however since the shifting has taken some time.
+                    We immediately send the remaining notes.
+
+                    New loop time is now 2, but next tick will add 3 or 4 or whatever time has passed since last tick.
+                    The time after shifting is 12 + shift_time
+                    In the sequence, the time is 2 (12)
+
+                    Next tick comes on.
+                    Time is now 12 + shift_time + 3 = 15s
+                    Sequence takes in this formula, so that time is 5s
+                    And so we're back on track!
+
+                    Only issue is anything that might happen after 0.0 (by s) but before whatever tiny fucking increment
+                    happens before the next tick.
+
+                 */
+                for packet in oversend {
                     self.osc_client.lock().unwrap().send(packet);
                 }
 
+            } else if mode_individual {
+
+                // TODO: Messy code
+                let oversend = self.master_sequence_handler.lock().unwrap().shift_finished();
+
+                // TODO: What is a "loop start" message in this case? individual? 
+
+                for packet in oversend {
+                    self.osc_client.lock().unwrap().send(packet);
+                }
             }
 
             {
