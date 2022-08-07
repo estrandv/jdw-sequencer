@@ -25,9 +25,6 @@ mod osc_model;
 mod config;
 mod queue;
 
-// /1000 for ms
-//const IDLE_TIME_MS: u64 = 200;
-
 pub struct StateHandle {
     reset: RefCell<bool>,
     hard_stop: RefCell<bool>,
@@ -216,8 +213,7 @@ impl SequencerTickLoop {
                 self.osc_client.lock().unwrap().send(packet);
             }
 
-            // TODO: This should then be a config
-            let mode_individual = true;
+            self.master_sequence_handler.lock().unwrap().start_all_new();
 
             // If there are no notes left to play, reset the sequencer by pushing queues into state
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
@@ -236,15 +232,6 @@ impl SequencerTickLoop {
                     })
                 );
 
-                // Second send, since the final tick of a sequence is also the first tick of the next one and
-                //  new messages might be available after the shift
-
-                // TODO: Single-send idea.
-                // - Return overshoot notes when shift happens
-                // - Must not even necessarily be an overshoot - just return the 0.0 ones
-                // - Still have to send again... but in a less repetitive way
-                // - Overshoot is tricky as usual: Some time HAS passed since the elapsed beats calculation
-                //  - Time until last tick is completely negligible however. The problem is if it shifts the total somehow.
                 /*
                     EXPERIMENT: SHift times
 
@@ -275,12 +262,11 @@ impl SequencerTickLoop {
                     self.osc_client.lock().unwrap().send(packet);
                 }
 
-            } else if mode_individual {
+            } else if config::SEQUENER_RESET_MODE == config::SEQ_RESET_MODE_INDIVIDUAL {
 
-                // TODO: Messy code
                 let oversend = self.master_sequence_handler.lock().unwrap().shift_finished();
 
-                // TODO: What is a "loop start" message in this case? individual? 
+                // TODO: What is a "loop start" message in this case? individual?
 
                 for packet in oversend {
                     self.osc_client.lock().unwrap().send(packet);

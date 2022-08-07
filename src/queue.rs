@@ -4,7 +4,7 @@ use jdw_osc_lib::TimedOSCPacket;
 use log::info;
 use rosc::OscPacket;
 use serde::de::Unexpected::Seq;
-use crate::{midi_utils};
+use crate::{config, midi_utils};
 
 
 /*
@@ -96,7 +96,8 @@ pub struct Sequencer {
     active_sequence: Vec<TimedOSCPacket>,
     queue: Vec<TimedOSCPacket>,
     current_beat: f32,
-    end_beat: f32,
+    pub end_beat: f32,
+    pub started: bool // Used to block immediate execution when a new sequencer is created
 }
 
 impl Sequencer {
@@ -105,7 +106,8 @@ impl Sequencer {
             active_sequence: vec![],
             queue: vec![],
             current_beat: 0.0,
-            end_beat: 0.0
+            end_beat: 0.0,
+            started: false
         }
     }
 
@@ -185,6 +187,10 @@ impl Sequencer {
     pub fn set_queue(&mut self, new_queue: Vec<TimedOSCPacket>) {
         self.queue = new_queue;
     }
+
+    pub fn start(&mut self) {
+        self.started = true;
+    }
 }
 
 // Registry of all active sequencers and their aliases
@@ -203,7 +209,7 @@ impl SequencerHandler {
 
     pub fn all_sequences_finished(&self) -> bool {
         // If there are no messages left to send for any sequence (all popped; all times passed)
-        self.sequences.iter().all(|tuple| tuple.1.is_finished())
+        self.sequences.iter().all(|tuple| tuple.1.is_finished() || !tuple.1.started)
     }
 
     pub fn empty_all(&mut self) {
@@ -231,12 +237,65 @@ impl SequencerHandler {
     pub fn shift_finished(&mut self) -> Vec<OscPacket> {
 
         let collected = self.sequences.iter_mut()
-            .filter(|seq| seq.1.is_finished())
+            .filter(|seq| seq.1.is_finished() && seq.1.started)
             .map(|seq| seq.1.shift_queue())
             .flatten()
             .collect();
 
         collected
+    }
+
+    // Unstarted sequences (new arrivals) will not reset when finished.
+    // This function handles logic for when to start them.
+    pub fn start_all_new(&mut self) {
+        let amount_unstarted = self.sequences.iter()
+            .filter(|seq| !seq.1.started)
+            .count();
+
+        let mut should_start = false;
+        if amount_unstarted > 0 {
+            if config::SEQUENCER_START_MODE == config::SEQ_START_MODE_NEAREST {
+                let amount_finished = self.sequences.iter()
+                    .filter(|seq| seq.1.started && seq.1.is_finished())
+                    .count();
+
+                let amount_started = self.sequences.iter()
+                    .filter(|seq| seq.1.started)
+                    .count();
+
+                if amount_finished > 0 || amount_started == 0 {
+                    should_start = true;
+                }
+            }
+            else if config::SEQUENCER_START_MODE == config::SEQ_START_MODE_LONGEST {
+                let longest_sequence = self.sequences.iter()
+                    .filter(|seq| seq.1.started == true)
+                    .max_by(|seq1, seq2| seq1.1.end_beat.total_cmp(&seq2.1.end_beat))
+                    .map(|seq| seq.1);
+
+                if longest_sequence.is_some() {
+                    if longest_sequence.unwrap().is_finished() {
+                        should_start = true;
+                    }
+                } else {
+                    // With no longest (no started) we start immediately
+                    should_start = true;
+                }
+            }
+            else if config::SEQUENCER_START_MODE == config::SEQ_START_MODE_IMMEDIATE {
+                should_start = true;
+            }
+
+        }
+
+        if should_start {
+            self.start_all();
+        }
+
+    }
+
+    fn start_all(&mut self) {
+        self.sequences.iter_mut().for_each(|seq| seq.1.start());
     }
 
     // Queue a set of timed messages for a given sequencer alias.

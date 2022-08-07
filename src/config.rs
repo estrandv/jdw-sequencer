@@ -16,6 +16,18 @@ pub const APPLICATION_OUT_SOCKET_PORT: i32 = 14444; // Messages send from this a
 // "US" = Microseconds
 pub const TICK_TIME_US: u64 = 4000; // 4ms?
 
+// TODO: Enum / own struct for these?
+pub const SEQ_START_MODE_NEAREST: i32 = 0;
+pub const SEQ_START_MODE_LONGEST: i32 = 1;
+pub const SEQ_START_MODE_IMMEDIATE: i32 = 2;
+
+pub const SEQUENCER_START_MODE: i32 = SEQ_START_MODE_LONGEST;
+
+pub const SEQ_RESET_MODE_TOGETHER: i32 = 0;
+pub const SEQ_RESET_MODE_INDIVIDUAL: i32 = 1;
+
+pub const SEQUENER_RESET_MODE: i32 = SEQ_RESET_MODE_INDIVIDUAL;
+
 pub fn get_addr(port: i32) -> String {
     format!("{}:{}", APPLICATION_IP, port)
 }
