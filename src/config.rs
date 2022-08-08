@@ -9,7 +9,9 @@ pub const APPLICATION_IP: &str = "127.0.0.1";
 
 pub const APPLICATION_IN_PORT: i32 = 14441; // Messages sent to this port will be read by this application
 //pub const APPLICATION_OUT_PORT: i32 = 14443; // This application sends its outgoing messages to this port
-pub const APPLICATION_OUT_PORT: i32 = 13331; // Hardwire to jdw-sc
+//pub const APPLICATION_OUT_PORT: i32 = 13331; // Hardwire to jdw-sc
+pub const APPLICATION_OUT_PORT: i32 = 13339; // jdw-osc-router
+//pub const APPLICATION_OUT_PORT: i32 = 12367; // Hardwire to jdw-sampler
 
 pub const APPLICATION_OUT_SOCKET_PORT: i32 = 14444; // Messages send from this application will have this port listed as "from"
 
