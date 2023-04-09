@@ -59,6 +59,7 @@ impl RealTimePacketSequence {
     }
 
 
+    // TODO: Might be deprecated, check usage
     // Remove and receive the contained packets of any timed packets whose trigger time is
     // lesser or equal to the given current time
     pub fn pop_at_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
@@ -301,17 +302,29 @@ impl SequencerHandler {
     // Queue a set of timed messages for a given sequencer alias.
     // If no sequencer with the given alias exists, it will be created.
     pub fn queue_sequence(&mut self, alias: &str, new_queue: Vec<TimedOSCPacket>) {
-        let existing = self.sequences.iter_mut()
-            .find(|data| &data.0.clone() == alias)
-            .map(|tuple| tuple.1);
 
-        if existing.is_some() {
-            existing.unwrap().set_queue(new_queue);
+        /*
+            WIP: Remove existing queue completely if update contains no messages.
+            This allows the next queueing of notes to start "naturally" on-beat like a new sequence.
+         */
+        if new_queue.is_empty() {
+            self.sequences.retain(|key, _| key != alias);
         } else {
-            let mut new_seq = Sequencer::new();
-            new_seq.set_queue(new_queue);
-            self.sequences.insert(alias.to_string(), new_seq);
+
+            // TODO: Should just grab by key instead
+            let existing = self.sequences.iter_mut()
+                .find(|data| &data.0.clone() == alias)
+                .map(|tuple| tuple.1);
+
+            if existing.is_some() {
+                existing.unwrap().set_queue(new_queue);
+            } else {
+                let mut new_seq = Sequencer::new();
+                new_seq.set_queue(new_queue);
+                self.sequences.insert(alias.to_string(), new_seq);
+            }
         }
+
     }
 
     // Pop all messages that match the given time from all contained sequencers, returning them as a combined vector

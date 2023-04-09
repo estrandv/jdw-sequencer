@@ -196,7 +196,7 @@ checksum = "112c678d4050afce233f4f2852bb2eb519230b3cf12f33585275537d7e41578d"
 [[package]]
 name = "jdw-osc-lib"
 version = "0.1.0"
-source = "git+https://Emstrevk@bitbucket.org/Emstrevk/jdw-osc-lib.git?branch=master#ec882922d7a5d8831670849859c3e340cbf8a113"
+source = "git+ssh://git@bitbucket.org/Emstrevk/jdw-osc-lib.git?branch=master#ec882922d7a5d8831670849859c3e340cbf8a113"
 dependencies = [
  "rosc",
 ]
