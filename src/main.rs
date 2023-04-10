@@ -219,6 +219,8 @@ impl SequencerTickLoop {
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
             if all_finished || reset_requested {
 
+                info!("All queues finished, shifting queues...");
+
                 // On shift, we start immediately on the new timeline (getting any 0.0 packets as oversend)
                 let oversend = self.master_sequence_handler.lock().unwrap().shift_queues();
 

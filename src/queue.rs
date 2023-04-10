@@ -1,97 +1,13 @@
 use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
 use jdw_osc_lib::TimedOSCPacket;
-use log::info;
+use log::{debug, info};
 use rosc::OscPacket;
 use serde::de::Unexpected::Seq;
 use crate::{config, midi_utils};
 
-
-/*
-    Packet to be sent at a certain time within a sequence.
- */
-pub struct RealTimePacket {
-    pub packet: Option<OscPacket>,
-    pub time: DateTime<Utc>,
-}
-
-/*
-    Self-emptying set of real time packets - populated on new() and then emptied using pop_on_time until
-    nothing remains. Typically thrown straight in trash and replaced after this.
- */
-pub struct RealTimePacketSequence {
-    timed_packets: Vec<RealTimePacket>,
-}
-
-impl RealTimePacketSequence {
-    pub fn empty() -> RealTimePacketSequence {
-        RealTimePacketSequence { timed_packets: vec![] }
-    }
-
-    // Add actual calculated execution time for each message and use that vector to construct a sequence
-    pub fn new(messages: Vec<TimedOSCPacket>, start_time: DateTime<Utc>, bpm: i32) -> RealTimePacketSequence {
-        let mut iter_time = start_time.clone();
-        let mut real_time_packets: Vec<RealTimePacket> = Vec::new();
-
-        for message in messages {
-            let wrapped_packet = RealTimePacket {
-                packet: Some(message.packet),
-                time: iter_time.clone(),
-            };
-
-            real_time_packets.push(wrapped_packet);
-
-            let ms = midi_utils::beats_to_micro_seconds(message.time, bpm);
-            iter_time = iter_time + Duration::microseconds(ms);
-        }
-
-        // Each sequence will only reset once all packets have reached their time
-        // We thus add a final dummy tick to let the real last message keep its padding time
-        let final_tick = RealTimePacket {
-            packet: None,
-            time: iter_time.clone(),
-        };
-        real_time_packets.push(final_tick);
-
-        RealTimePacketSequence {
-            timed_packets: real_time_packets
-        }
-    }
-
-
-    // TODO: Might be deprecated, check usage
-    // Remove and receive the contained packets of any timed packets whose trigger time is
-    // lesser or equal to the given current time
-    pub fn pop_at_time(&mut self, time: &DateTime<Utc>) -> Vec<OscPacket> {
-        let candidates = self.timed_packets
-            .iter()
-            .filter(|n| &n.time <= time)
-            .map(|n| n.clone().packet.clone())
-            .filter(|n| n.is_some())
-            .map(|o| o.unwrap())
-            .collect();
-
-        self.timed_packets.retain(|n| &n.time > time);
-
-        candidates
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.timed_packets.is_empty()
-    }
-
-    pub fn get_end_time(&self) -> DateTime<Utc> {
-        if self.timed_packets.is_empty() {
-            return Utc::now();
-        }
-
-        self.timed_packets.iter().last().unwrap().time.clone()
-    }
-}
-
 /*
     Machine containing an active sequence and the queued data it will be replaced with once done/shifted.
-    TODO: WIll take on much of RealTimePacketSequence, remove that later
  */
 pub struct Sequencer {
     active_sequence: Vec<TimedOSCPacket>,
@@ -111,6 +27,38 @@ impl Sequencer {
             started: false
         }
     }
+
+
+    /*
+        TODO: Figuring out the logic puzzle of "started with empty queue"
+        - Empty queue call means active sequence will keep runnin but queue is now empty
+        - On next shift (active sequence ends vs all sequences end), the empty queue will become active
+        - This creates an active sequence that immediately finishes
+        - Since this queue acts as nearest neighbour to ANYTHING (including self), any new arrivals will begin immediately
+        - More importantly for THIS case: as soon as a new queue arrives, shift will trigger and start the sequence
+        - If we set it to unstarted, the active sequence will stop playing immediately
+            -> Our current config is RESET_MODE_INDIVIDUAL, which means:
+                a. we shift if everything is finished or started
+                b. AND we shift everything that is started or finished on individual basis
+        - How does it behave when set to !started?
+            - Sound immediately cuts
+            - Immediately on requeue it is started
+        - Why does the sound cut immediately?
+            - tick should not consider started, it looks to current beat only
+            - If an immediate shift happens, that could explain it
+            - I think actually it just... finishes. It's a short sequence.
+                -> As such it will be set to finished
+                -> Thus it will start immediately on requeue because it is... finished.
+        - Why does it immediately requeue?
+            - all_finished is false because the other sequence is still running/active
+            - shift_finished should only work for finished and started sequences
+            - start_all is not triggering (confirmed)
+            - Actually this might behave differently when sent in as muted to begin with
+                - Shift spam if you mute mid-riff seems to start when the longest sequence finishes
+            -
+
+        - Can we just set started=false when shifting into an empty queue?
+     */
 
     // Add elapsed time to current_beat, pop any passed messages, and return them
     pub fn tick_and_return(&mut self, elapsed_beats: &f32) -> Vec<OscPacket> {
@@ -145,7 +93,7 @@ impl Sequencer {
     pub fn shift_queue(&mut self) -> Vec<OscPacket> {
         let last_end_time = self.end_beat;
 
-        if !&self.queue.is_empty() {
+        if !&self.queue.is_empty() && self.started {
 
             let mut new_sequence: Vec<TimedOSCPacket> = vec![];
             let mut new_timeline: f32 = 0.0;
@@ -172,7 +120,13 @@ impl Sequencer {
             self.current_beat = overshoot;
             self.active_sequence = new_sequence;
             self.end_beat = new_timeline; // Includes the "ring out" time of the last packet
-            info!("Current beat starts at {}", self.current_beat);
+            info!("Queue shifted. Current beat starts at {}", self.current_beat);
+        } else {
+            // When queue is empty, delay the shift until an explicit call to started is made.
+            // This prevents previously muted queues from immediately shifting into active when requeued.
+            // This took a long time to debug and I'm still not 100% sure why it works - could cause more bugs in
+            // other run-modes than nearest-neighbour...
+            self.started = false;
         }
 
         // Since we now are at least on 0.0 (possibly even on a bit of overshoot), we should get
@@ -265,6 +219,7 @@ impl SequencerHandler {
                     .count();
 
                 if amount_finished > 0 || amount_started == 0 {
+                    debug!("Starting all new sequences because a nearest neighbour is finished.");
                     should_start = true;
                 }
             }
@@ -276,14 +231,17 @@ impl SequencerHandler {
 
                 if longest_sequence.is_some() {
                     if longest_sequence.unwrap().is_finished() {
+                        debug!("Starting all new sequences because the longest sequence has finished.");
                         should_start = true;
                     }
                 } else {
                     // With no longest (no started) we start immediately
+                    debug!("Starting all new sequences because no longest started sequence exists");
                     should_start = true;
                 }
             }
             else if config::SEQUENCER_START_MODE == config::SEQ_START_MODE_IMMEDIATE {
+                debug!("Starting all new sequences because start mode is set to immediate");
                 should_start = true;
             }
 
@@ -303,26 +261,19 @@ impl SequencerHandler {
     // If no sequencer with the given alias exists, it will be created.
     pub fn queue_sequence(&mut self, alias: &str, new_queue: Vec<TimedOSCPacket>) {
 
-        /*
-            WIP: Remove existing queue completely if update contains no messages.
-            This allows the next queueing of notes to start "naturally" on-beat like a new sequence.
-         */
-        if new_queue.is_empty() {
-            self.sequences.retain(|key, _| key != alias);
+
+        let existing = self.sequences.get_mut(alias);
+
+        if existing.is_some() {
+
+            existing.map(|seq| {
+                seq.set_queue(new_queue);
+            });
+
         } else {
-
-            // TODO: Should just grab by key instead
-            let existing = self.sequences.iter_mut()
-                .find(|data| &data.0.clone() == alias)
-                .map(|tuple| tuple.1);
-
-            if existing.is_some() {
-                existing.unwrap().set_queue(new_queue);
-            } else {
-                let mut new_seq = Sequencer::new();
-                new_seq.set_queue(new_queue);
-                self.sequences.insert(alias.to_string(), new_seq);
-            }
+            let mut new_seq = Sequencer::new();
+            new_seq.set_queue(new_queue);
+            self.sequences.insert(alias.to_string(), new_seq);
         }
 
     }
