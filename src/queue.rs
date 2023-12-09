@@ -28,38 +28,6 @@ impl Sequencer {
         }
     }
 
-
-    /*
-        TODO: Figuring out the logic puzzle of "started with empty queue"
-        - Empty queue call means active sequence will keep runnin but queue is now empty
-        - On next shift (active sequence ends vs all sequences end), the empty queue will become active
-        - This creates an active sequence that immediately finishes
-        - Since this queue acts as nearest neighbour to ANYTHING (including self), any new arrivals will begin immediately
-        - More importantly for THIS case: as soon as a new queue arrives, shift will trigger and start the sequence
-        - If we set it to unstarted, the active sequence will stop playing immediately
-            -> Our current config is RESET_MODE_INDIVIDUAL, which means:
-                a. we shift if everything is finished or started
-                b. AND we shift everything that is started or finished on individual basis
-        - How does it behave when set to !started?
-            - Sound immediately cuts
-            - Immediately on requeue it is started
-        - Why does the sound cut immediately?
-            - tick should not consider started, it looks to current beat only
-            - If an immediate shift happens, that could explain it
-            - I think actually it just... finishes. It's a short sequence.
-                -> As such it will be set to finished
-                -> Thus it will start immediately on requeue because it is... finished.
-        - Why does it immediately requeue?
-            - all_finished is false because the other sequence is still running/active
-            - shift_finished should only work for finished and started sequences
-            - start_all is not triggering (confirmed)
-            - Actually this might behave differently when sent in as muted to begin with
-                - Shift spam if you mute mid-riff seems to start when the longest sequence finishes
-            -
-
-        - Can we just set started=false when shifting into an empty queue?
-     */
-
     // Add elapsed time to current_beat, pop any passed messages, and return them
     pub fn tick_and_return(&mut self, elapsed_beats: &f32) -> Vec<OscPacket> {
 
@@ -78,7 +46,7 @@ impl Sequencer {
             self.active_sequence.retain(|seq| &seq.time > &beat);
 
             if !&candidates.is_empty() {
-                info!("Tick time is now {} and {} candidates were found. Remaining: {}.", self.current_beat, candidates.len(), &self.active_sequence.len());
+                debug!("Current beat in a sequencer is now {} and {} candidates were found. Remaining: {}.", self.current_beat, candidates.len(), &self.active_sequence.len());
             }
 
             return candidates;
@@ -120,7 +88,7 @@ impl Sequencer {
             self.current_beat = overshoot;
             self.active_sequence = new_sequence;
             self.end_beat = new_timeline; // Includes the "ring out" time of the last packet
-            info!("Queue shifted. Current beat starts at {}", self.current_beat);
+            info!("Queue shifted. Current beat starts at {} and ends at {}", self.current_beat, new_timeline);
         } else {
             // When queue is empty, delay the shift until an explicit call to started is made.
             // This prevents previously muted queues from immediately shifting into active when requeued.
@@ -162,6 +130,7 @@ impl SequencerHandler {
         self.sequences.is_empty()
     }
 
+    // All conform to: finished or not yet started. 
     pub fn all_sequences_finished(&self) -> bool {
         // If there are no messages left to send for any sequence (all popped; all times passed)
         self.sequences.iter().all(|tuple| tuple.1.is_finished() || !tuple.1.started)
@@ -172,6 +141,8 @@ impl SequencerHandler {
     }
 
     // Call shift_queues on all contained sequences, returning a combined result of packets
+    // Shift: replace active with queued ("reset")
+    // Returns: Messages at the start of the new queue (0.0)
     pub fn shift_queues(&mut self) -> Vec<OscPacket> {
 
         // TODO: Potential bug here too - what if shift happens later than the last tick,
@@ -285,8 +256,9 @@ impl SequencerHandler {
         // Find messages matching the current time
         for meta_data in self.sequences.iter_mut() {
             let on_time = meta_data.1.tick_and_return(elapsed_beats);
-
             if !on_time.is_empty() {
+
+                debug!("Found notes to play for sequencer <{}> in tick_and_return_all", meta_data.0);
 
                 // Post the messages to the out socket
                 {

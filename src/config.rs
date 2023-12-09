@@ -30,6 +30,9 @@ pub const SEQ_RESET_MODE_INDIVIDUAL: i32 = 1;
 
 pub const SEQUENER_RESET_MODE: i32 = SEQ_RESET_MODE_INDIVIDUAL;
 
+
+pub const MIDI_SYNC: bool = false; 
+
 pub fn get_addr(port: i32) -> String {
     format!("{}:{}", APPLICATION_IP, port)
 }

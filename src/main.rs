@@ -181,6 +181,11 @@ impl SequencerTickLoop {
         let sleeper = spin_sleep::SpinSleeper::new(100);
 
         loop {
+
+
+            /*
+                Calculate and log loop time taken 
+            */
             let this_loop_time = Utc::now();
             let elapsed_time = match last_loop_time {
                 Some(t) => {
@@ -189,33 +194,50 @@ impl SequencerTickLoop {
                 None => Duration::zero()
             };
             last_loop_time = Some(this_loop_time.clone());
+            info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
 
-            debug!("Loop time (microsec): {:?}", elapsed_time.num_microseconds());
-
+            /*
+                Consume user input variables from state and reset them where needed.
+            */
             let current_bpm = self.state_handle.lock().unwrap().bpm.clone().into_inner();
             let reset_requested = self.state_handle.lock().unwrap().reset.clone().into_inner();
             let hard_stop_requested = self.state_handle.lock().unwrap().hard_stop.clone().into_inner();
-
-            // Since any reset and stop vars are now picked out, we can reset them to false in state
             {
                 self.state_handle.lock().unwrap().reset.replace(false);
                 self.state_handle.lock().unwrap().hard_stop.replace(false);
             }
 
-            // TODO: Inconvenient spam when not using router
-            //self.midi_sync(&elapsed_time, current_bpm);
-
-            let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
-
-            // First send here.
-            let messages = self.master_sequence_handler.lock().unwrap().tick_and_return_all(&elapsed_beats);
-            for packet in messages {
-                self.osc_client.lock().unwrap().send(packet);
+            /*
+                Send a midi sync message every loop, if enabled.
+                TODO: Not really used or tested. Needs to be a packet-getter method instead of locking the client. 
+            */
+            if config::MIDI_SYNC {
+                self.midi_sync(&elapsed_time, current_bpm);
             }
 
+            /*
+                Determine how many "beats" have passed since the last loop (from time and current bpm).
+                Use this to collect beat-triggered sequencer packets.
+            */
+
+            // Begin collecting loop packets to send all at once - some come from ticks, some from queue shifting, etc. 
+            let mut packets_to_send: Vec<OscPacket> = Vec::new();
+
+            let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
+            let messages = self.master_sequence_handler.lock().unwrap().tick_and_return_all(&elapsed_beats);
+            for packet in messages {
+                packets_to_send.push(packet);
+            }
+
+            /*
+                Check if any new sequencers have been created since last loop, starting them if
+                    start criteria are met (typically on some kind of sequence start unless configured as "immediate start")
+            */            
             self.master_sequence_handler.lock().unwrap().start_all_new();
 
-            // If there are no notes left to play, reset the sequencer by pushing queues into state
+            /*
+                QUEUE RESET OPTION 1: Handle manual and "everything is done and waiting" queue resets.
+            */
             let all_finished = self.master_sequence_handler.lock().unwrap().all_sequences_finished();
             if all_finished || reset_requested {
 
@@ -224,7 +246,15 @@ impl SequencerTickLoop {
                 // On shift, we start immediately on the new timeline (getting any 0.0 packets as oversend)
                 let oversend = self.master_sequence_handler.lock().unwrap().shift_queues();
 
-                self.osc_client.lock().unwrap().send(
+                for packet in oversend {
+                    packets_to_send.push(packet);
+                }
+
+                /*
+                    A total reset also triggers a special "full loop started" message. 
+                    TODO: Not really tested or used - should probably trigger in other scenarios as well.
+                */
+                packets_to_send.push(
                     OscPacket::Message(OscMessage {
                         addr: "/jdw_seq_loop_start".to_string(),
                         args: vec![
@@ -234,36 +264,9 @@ impl SequencerTickLoop {
                     })
                 );
 
-                /*
-                    EXPERIMENT: SHift times
-
-                    loop 2 start time: 10
-                    tick: Every 3 seconds
-                    end time: 10
-                    last tick is at: 12 seconds
-                    So even as the tick starts we have an overshoot of 2 seconds.
-                    We immediately send the last note by ticking.
-                    We shift queues. The timeline in the sequencer overshoots and is now 2.
-                    Time is now closer to "13" however since the shifting has taken some time.
-                    We immediately send the remaining notes.
-
-                    New loop time is now 2, but next tick will add 3 or 4 or whatever time has passed since last tick.
-                    The time after shifting is 12 + shift_time
-                    In the sequence, the time is 2 (12)
-
-                    Next tick comes on.
-                    Time is now 12 + shift_time + 3 = 15s
-                    Sequence takes in this formula, so that time is 5s
-                    And so we're back on track!
-
-                    Only issue is anything that might happen after 0.0 (by s) but before whatever tiny fucking increment
-                    happens before the next tick.
-
-                 */
-                for packet in oversend {
-                    self.osc_client.lock().unwrap().send(packet);
-                }
-
+            /*
+                QUEUE RESET OPTION 2: Handle queue resets for individual reset mode 
+            */
             } else if config::SEQUENER_RESET_MODE == config::SEQ_RESET_MODE_INDIVIDUAL {
 
                 let oversend = self.master_sequence_handler.lock().unwrap().shift_finished();
@@ -271,10 +274,13 @@ impl SequencerTickLoop {
                 // TODO: What is a "loop start" message in this case? individual?
 
                 for packet in oversend {
-                    self.osc_client.lock().unwrap().send(packet);
+                    packets_to_send.push(packet);
                 }
             }
 
+            /*
+                Handle manual resets and hard stops by effectively removing all running sequences. 
+            */
             {
                 // Force reset means dump everything
 
@@ -283,22 +289,39 @@ impl SequencerTickLoop {
                 }
             }
 
+
+            /*
+                Send all packets collected for this loop tick
+            */
+            {
+
+                let client_lock = self.osc_client.lock().unwrap(); 
+
+                for packet in packets_to_send {
+                    client_lock.send(packet);
+                }
+
+            }
+
+
+            /*
+                Calculate time taken to execute this loop and log accordingly
+            */
             let dur = Utc::now().time() - this_loop_time.time();
             let time_taken = dur.num_microseconds().unwrap_or(0) as u64;
             if time_taken > TICK_TIME_US {
                 warn!("Operations performed (time: {}) exceed tick time, overflow...", time_taken);
-                spin_sleep::sleep(std::time::Duration::from_micros(TICK_TIME_US));
-            } else {
-
-                // NOTE: Evening out the tick like this is not required,
-                //  since even tick time is not theoretically required to
-                //  catch any message by-time sufficiently for the human ear.
-                // Figured it was a nice-to-have anyway...
-                let remainder = TICK_TIME_US - time_taken;
-                sleeper.sleep(std::time::Duration::from_micros(remainder));
             }
+            // NOTE: Previously, if time taken did not overshoot tick time, we subtracted it to make all ticks have roughly the same effective time
+            //  I've never found any evidence of this having any effect on the "feel" of the sequencer, but here's how it went:
+            // let remainder = TICK_TIME_US - time_taken;
 
+            /*
+                Sleep until next loop tick
+            */
             debug!("End loop: {}", this_loop_time);
+            sleeper.sleep(std::time::Duration::from_micros(TICK_TIME_US));
+
         } // end loop
     }
 
