@@ -295,10 +295,13 @@ impl SequencerTickLoop {
             */
             {
 
-                let client_lock = self.osc_client.lock().unwrap(); 
+                if !packets_to_send.is_empty() {
 
-                for packet in packets_to_send {
-                    client_lock.send(packet);
+                    let client_lock = self.osc_client.lock().unwrap(); 
+
+                    for packet in packets_to_send {
+                        client_lock.send(packet);
+                    }
                 }
 
             }
@@ -315,6 +318,7 @@ impl SequencerTickLoop {
             // NOTE: Previously, if time taken did not overshoot tick time, we subtracted it to make all ticks have roughly the same effective time
             //  I've never found any evidence of this having any effect on the "feel" of the sequencer, but here's how it went:
             // let remainder = TICK_TIME_US - time_taken;
+
 
             /*
                 Sleep until next loop tick
