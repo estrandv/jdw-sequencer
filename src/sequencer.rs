@@ -17,6 +17,9 @@ use bigdecimal::{BigDecimal, Zero}; // Floating point arithmetic is unsuitable f
             - If several of them are waiting for a final one to complete, the overshoot is effectively that of the 
                 final sequencer for ALL OTHER SEQUENCERS AS WELL; the others cannot use their own overshoot values 
 
+    NOTE ON NEXT STEPS: 
+        - I believe "started" is unneeded - a higher level handler can keep a list of started vs unstarted. 
+
 */
 
 #[derive(Debug, Clone)]
@@ -68,6 +71,7 @@ impl<T: Clone> Sequencer<T> {
                 .active_sequence
                 .iter()
                 .filter(|n| {
+                    // Bit chunky! In rough terms: entries not yet processed which current_beat has now passed. 
                     &n.trigger_beat <= &self.current_beat && match &self.processed_beats { Some(value) => &n.trigger_beat > value, None => true }
                 })
                 .map(|n| n.clone().contents.clone())
@@ -88,7 +92,7 @@ impl<T: Clone> Sequencer<T> {
         &self.current_beat >= &self.end_beat
     }
 
-    // Use to check by how much tick() has pushed current_beat past end_beat. 
+    // Use to check by how much tick() has pushed current_beat past end_beat, if at all. Only relevant if is_finished(). 
     pub fn get_overshoot(&self) -> BigDecimal {
         return match &self.current_beat > &self.end_beat {true => &self.current_beat - &self.end_beat, false => BigDecimal::zero()}; 
     }

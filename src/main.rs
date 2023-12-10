@@ -25,6 +25,7 @@ mod osc_model;
 mod config;
 mod queue;
 mod sequencer;
+mod master_sequencer;
 
 pub struct StateHandle {
     reset: RefCell<bool>,
