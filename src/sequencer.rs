@@ -1,5 +1,7 @@
 use std::str::FromStr;
-use bigdecimal::{BigDecimal, Zero}; // Floating point arithmetic is unsuitable for exact calculations 
+use bigdecimal::{BigDecimal, Zero};
+use log::{debug, info};
+
 
 /*
 
@@ -28,6 +30,16 @@ pub struct SequencerEntry<T: Clone> {
     pub contents: T,
 }
 
+impl<T: Clone> SequencerEntry<T> {
+    pub fn new(beat: BigDecimal, entry: T) -> SequencerEntry<T> {
+        SequencerEntry {
+            trigger_beat: beat,
+            contents: entry
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Sequencer<T: Clone> {
     pub active_sequence: Vec<SequencerEntry<T>>,
     pub queued_sequence: Vec<SequencerEntry<T>>,
@@ -89,7 +101,8 @@ impl<T: Clone> Sequencer<T> {
     }
 
     pub fn is_finished(&self) -> bool {
-        &self.current_beat >= &self.end_beat
+        let cursor = &self.processed_beats.clone().unwrap_or(self.current_beat.clone());
+        return cursor >= &self.end_beat; 
     }
 
     // Use to check by how much tick() has pushed current_beat past end_beat, if at all. Only relevant if is_finished(). 
