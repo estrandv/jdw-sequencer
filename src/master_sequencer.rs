@@ -93,7 +93,7 @@ impl<T: Clone> MasterSequencer<T> {
         }
     }
 
-    fn start_ready(&mut self) {
+    fn start_check(&mut self) {
 
         let start_mode_ok = match self.sequencer_start_mode {
             SequencerStartMode::WithLongestSequence => self.longest_sequence_finished() || self.count_started() == 0,
@@ -154,9 +154,53 @@ mod tests {
         BigDecimal::from_str(inp).unwrap()
     }
 
-    // TODO: Some kind of overshoot test for the reset 
+    // TODO: More start mode tests 
 
-    // TODO: Start mode tests 
+    #[test]
+    fn start_mode_longest_test() {
+        let mut ms: MasterSequencer<&str> = MasterSequencer::new(SequencerStartMode::WithLongestSequence, SequencerResetMode::Individual);
+        let entries1 = vec![
+            SequencerEntry::new(big("0.0"), "one"),
+        ];
+        ms.queue("longest", entries1.clone(), big("3.0"));
+        ms.start_check();
+        ms.reset_check();
+        ms.queue("first", entries1.clone(), big("1.0"));
+        ms.queue("second", entries1.clone(), big("1.5"));
+        assert_eq!(ms.active_sequencers.len(), 1);
+        assert_eq!(ms.inactive_sequencers.len(), 2);
+        assert_eq!(ms.count_finished(), 0);
+        ms.start_check();
+        assert_eq!(ms.active_sequencers.len(), 1);
+        assert_eq!(ms.inactive_sequencers.len(), 2);
+        assert_eq!(ms.count_finished(), 0);
+        ms.reset_check();
+        assert_eq!(ms.count_finished(), 0);
+
+        ms.tick(big("1.0"));
+        ms.start_check();
+        ms.reset_check();
+        assert_eq!(ms.active_sequencers.len(), 1);
+        assert_eq!(ms.inactive_sequencers.len(), 2);
+        assert_eq!(ms.count_finished(), 0);
+        
+        ms.tick(big("1.9"));
+        ms.start_check();
+        ms.reset_check();
+        assert_eq!(ms.active_sequencers.len(), 1);
+        assert_eq!(ms.inactive_sequencers.len(), 2);
+        assert_eq!(ms.count_finished(), 0);
+    
+        ms.tick(big("0.1"));
+        ms.start_check();
+        ms.reset_check();
+        assert_eq!(ms.active_sequencers.len(), 3);
+        assert_eq!(ms.inactive_sequencers.len(), 0);
+        assert_eq!(ms.count_finished(), 0);
+        
+
+
+    }
 
     #[test]
     fn reset_check_individual_test() {
@@ -182,7 +226,7 @@ mod tests {
         assert_eq!(ms.active_sequencers.len(), 0);
         assert_eq!(ms.inactive_sequencers.len(), 2);
         assert_eq!(ms.count_finished(), 0); 
-        ms.start_ready();
+        ms.start_check();
         assert_eq!(ms.active_sequencers.len(), 2);
         assert_eq!(ms.inactive_sequencers.len(), 0);
         assert_eq!(ms.count_finished(), 2); // Without reset, the queue end beat has not yet become the regular end beat
@@ -208,7 +252,7 @@ mod tests {
         assert_eq!(ms.active_sequencers.len(), 0);
         assert_eq!(ms.inactive_sequencers.len(), 3);
         assert_eq!(ms.count_finished(), 0); 
-        ms.start_ready();
+        ms.start_check();
         assert_eq!(ms.active_sequencers.len(), 3);
         assert_eq!(ms.inactive_sequencers.len(), 0);
         assert_eq!(ms.count_finished(), 3); // Without reset, the queue end beat has not yet become the regular end beat
@@ -222,11 +266,14 @@ mod tests {
         assert_eq!(ms.count_finished(), 2);
         ms.reset_check();
         assert_eq!(ms.count_finished(), 2);
-        ms.tick(big("1.0")); // Here, the longest finishes 
+        ms.tick(big("1.2")); // Here, the longest finishes with an overshoot of 0.2 
         assert_eq!(ms.count_finished(), 3);
         ms.reset_check();
         assert_eq!(ms.count_finished(), 0);
 
+        for sequence in ms.active_sequencers.iter() {
+            assert_eq!(sequence.1.current_beat, big("0.2"));
+        }
         
     }
     
