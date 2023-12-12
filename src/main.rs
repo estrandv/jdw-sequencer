@@ -26,6 +26,7 @@ mod config;
 mod queue;
 mod sequencer;
 mod master_sequencer;
+mod sequencing_daemon;
 
 pub struct StateHandle {
     reset: RefCell<bool>,

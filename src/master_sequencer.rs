@@ -2,9 +2,6 @@
 
     Rewrite of "SequenceHandler" in queue.rs with intent similar to sequencer.rs. 
 
-
-
-
 */
 
 use std::{collections::HashMap, hash::Hash, str::FromStr};
@@ -53,6 +50,12 @@ impl<T: Clone> MasterSequencer<T> {
 
     pub fn reset_check(&mut self) {
 
+        /*
+            General note on overshoot: It's not always crystal clear what the overshoot is. 
+                But when several sequencers are waiting for the longest one to complete, the 
+                overshoot is likely produced by the last tick on the longest sequencer, rather than
+                in each sequencer individually. 
+        */
         match self.sequencer_reset_mode {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
                 if self.longest_sequence_finished() {
@@ -93,7 +96,7 @@ impl<T: Clone> MasterSequencer<T> {
         }
     }
 
-    fn start_check(&mut self) {
+    pub fn start_check(&mut self) {
 
         let start_mode_ok = match self.sequencer_start_mode {
             SequencerStartMode::WithLongestSequence => self.longest_sequence_finished() || self.count_started() == 0,

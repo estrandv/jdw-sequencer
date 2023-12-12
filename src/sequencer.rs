@@ -11,17 +11,6 @@ use log::{debug, info};
        2. Generic (entries use <beat: float, T>)
        3. Transparent (minimal amount of mutation during regular operations - e.g. don't erase the active sequence)
 
-
-    GENERAL NOTE ON OVERSHOOT
-        - When looping a single sequencer, the overshoot is simple to justify and calculate: 
-            - You don't want to lose any progress towards the first note from the last 
-        - When dealing with many sequencers, it's a lot trickier. 
-            - If several of them are waiting for a final one to complete, the overshoot is effectively that of the 
-                final sequencer for ALL OTHER SEQUENCERS AS WELL; the others cannot use their own overshoot values 
-
-    NOTE ON NEXT STEPS: 
-        - I believe "started" is unneeded - a higher level handler can keep a list of started vs unstarted. 
-
 */
 
 #[derive(Debug, Clone)]
