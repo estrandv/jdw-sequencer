@@ -7,6 +7,15 @@ use serde::de::Unexpected::Seq;
 use crate::{config, midi_utils};
 
 /*
+
+    LEGACY 
+    To be replaced by sequencer.rs
+
+*/
+
+
+
+/*
     Machine containing an active sequence and the queued data it will be replaced with once done/shifted.
  */
 pub struct Sequencer {

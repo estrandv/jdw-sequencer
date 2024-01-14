@@ -9,6 +9,7 @@
             -> somewhat done! 
         - Make a method for converting incoming osc to timeline-adjusted entries in osc packets 
             -> See below, working on it here but no usage yet 
+        - re-implement the start/stop/reset logic from old main 
         - Backup old main, then use a new copy to implement this daemon in place of the old main loop 
 
 */
@@ -23,9 +24,17 @@ use rosc::OscPacket;
 
 use crate::{master_sequencer::MasterSequencer, midi_utils, sequencer::SequencerEntry};
 
-// TODO: Move to better place
-// NOTE: Rewrite of logic from queue.rs::shift_queue 
-pub fn to_sequence(input: Vec<TimedOSCPacket>) {
+/*
+    Below struct and function are a rewrite of logic previously contained in queue.rs::shift_queue. 
+    They should live somewhere else, determined by usage. 
+*/
+
+pub struct OscSequencePayload {
+    message_sequence: Vec<SequencerEntry<OscPacket>>,
+    end_beat: BigDecimal
+}
+
+pub fn to_sequence(input: Vec<TimedOSCPacket>) -> OscSequencePayload {
 
 
     let mut new_sequence: Vec<SequencerEntry<OscPacket>> = vec![];
@@ -40,9 +49,11 @@ pub fn to_sequence(input: Vec<TimedOSCPacket>) {
         new_timeline += big_time;
     }
 
-    // TODO: With no end beat, do we need to add a dud at the timeline end? Looking at sequencer.rs I really think we should. 
-    // Update: Nah, sequencer has "queue_end_beat" which we want to use. If this method should return detached data, that data
-    //  should be a struct that contains the vector as well as the end beat of new_timeline 
+    // TODO: Note the composite payload - sequencer.rs takes an end_beat for queue 
+    OscSequencePayload {
+        message_sequence: new_sequence,
+        end_beat: new_timeline
+    }
 
 }
 

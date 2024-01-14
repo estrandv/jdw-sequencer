@@ -2,10 +2,19 @@ use rosc::{OscBundle, OscMessage, OscPacket};
 
 use jdw_osc_lib::{OscArgHandler, TaggedBundle, TimedOSCPacket};
 
+
 /*
+
+    Collection of parsing models for received TaggedBundles.
+
+*/
+
+
+/*
+    Tagged bundle example: 
     [info: update_queue]
     [update_queue_info: "my_alias"]
-    bundle: [timed_msg_bundle, timed_msg_budle ...]
+    bundle: [timed_msg_bundle, timed_msg_bundle ...]
              
 */
 pub struct UpdateQueueMessage {

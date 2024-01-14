@@ -1,6 +1,7 @@
 /*
 
-    Rewrite of "SequenceHandler" in queue.rs with intent similar to sequencer.rs. 
+    Orchestration struct for sequencers. Mainly a composite struct to conveniently wrap list/map functions, but 
+        notably also handles the business logic of start and reset rules. 
 
 */
 

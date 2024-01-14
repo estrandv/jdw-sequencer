@@ -8,6 +8,14 @@ use rosc::encoder;
 use crate::config;
 use crate::config::{APPLICATION_IN_PORT, APPLICATION_OUT_PORT, APPLICATION_OUT_SOCKET_PORT};
 
+
+/*
+
+    OSC I/O - as generic as possible.
+
+*/
+
+
 const BUFFER_SIZE: usize = 33072;
 
 pub struct OSCClient {

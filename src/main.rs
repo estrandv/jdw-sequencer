@@ -12,23 +12,33 @@ use log::{debug, info, warn};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use simple_logger::SimpleLogger;
 use spin_sleep;
-use osc_read_daemon::{ProcessedOsc, JDWOSCPoller};
+use jdw_osc_polling::{ProcessedOsc, JDWOSCPoller};
 
-use osc_model::{UpdateQueueMessage};
+use bundle_model::{UpdateQueueMessage};
 
 use crate::config::TICK_TIME_US;
-use crate::osc_client::{OSCClient, OSCPoller};
+use crate::osc_communication::{OSCClient, OSCPoller};
 use crate::queue::SequencerHandler;
 
 pub mod midi_utils;
-mod osc_client;
-mod osc_model;
+mod osc_communication;
+mod bundle_model;
 mod config;
 mod queue;
 mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
-mod osc_read_daemon;
+mod jdw_osc_polling;
+
+
+/*
+
+    main.rs starts the two central loops:
+        1. The osc polling loop, that handles input and writes it to the shared state. 
+        2. The sequencing loop, which reads from input and progresses the sequencers with the passage of time. 
+
+*/
+
 
 pub struct StateHandle {
     reset: RefCell<bool>,

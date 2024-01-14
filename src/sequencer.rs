@@ -5,11 +5,10 @@ use log::{debug, info};
 
 /*
 
-   Rewrite of sequencer code in queue.rs.
-   Goal is a sequencer class that is:
-       1. Isolated and well-tested
-       2. Generic (entries use <beat: float, T>)
-       3. Transparent (minimal amount of mutation during regular operations - e.g. don't erase the active sequence)
+    NOTE: Rewrite of code in queue.rs. 
+
+    Generic sequencer class.
+    See description of fields in struct. 
 
 */
 
@@ -30,12 +29,12 @@ impl<T: Clone> SequencerEntry<T> {
 
 #[derive(Debug, Clone)]
 pub struct Sequencer<T: Clone> {
-    pub active_sequence: Vec<SequencerEntry<T>>,
-    pub queued_sequence: Vec<SequencerEntry<T>>,
-    pub current_beat: BigDecimal,
-    pub processed_beats: Option<BigDecimal>,
-    pub end_beat: BigDecimal,
-    pub queue_end_beat: BigDecimal
+    pub active_sequence: Vec<SequencerEntry<T>>, // The current sequence, accessed with tick() until end_beat is reached. 
+    pub queued_sequence: Vec<SequencerEntry<T>>, // The queued sequence that will replace active_sequence when end_beat is reached. 
+    pub current_beat: BigDecimal, // Beat timeline, to be compared with end_beat. 
+    processed_beats: Option<BigDecimal>, // Last step of current_beat, used for internal logic. 
+    pub end_beat: BigDecimal, // The last beat of the current sequence. 
+    pub queue_end_beat: BigDecimal // The last beat of the queued sequence. Replaces end_beat when end_beat is reached. 
 }
 
 impl<T: Clone> Sequencer<T> {
@@ -100,8 +99,7 @@ impl<T: Clone> Sequencer<T> {
     }
 
     /*
-        NOTE: This presumes that new_queue already has its entries arranged by trigger_beat rather than beats_reserved, which was common in 
-            an earlier implementation. 
+        NOTE: This presumes that new_queue already has its entries arranged on a timeline, with each time signature representing their start time. 
     */
     pub fn queue(&mut self, new_queue: Vec<SequencerEntry<T>>, end_beat: BigDecimal) {
         self.queue_end_beat = end_beat.clone();
