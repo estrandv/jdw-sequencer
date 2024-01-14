@@ -47,9 +47,7 @@ fn main() {
         reset: RefCell::new(false), hard_stop: RefCell::new(false), bpm: RefCell::new(120)
     }));
 
-    let osc_poller = OSCPoller::new();
     let osc_client = OSCClient::new();
-    let osc_poller_handle = Arc::new(Mutex::new(osc_poller));
     let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
     let master_sequencer = SequencerHandler::new();
@@ -79,7 +77,7 @@ fn main() {
     }
 }
 
-// TODO: replaces OSCREAD 
+// TODO: Can be moved to its own file 
 struct OSCDaemon {
     poller: JDWOSCPoller,
     state_handle: Arc<Mutex<StateHandle>>,
@@ -154,103 +152,6 @@ impl OSCDaemon {
                 info!("Error processing incoming osc: {}", msg);
             } 
         }
-    }
-}
-
-// Handle all incoming messages
-struct OSCRead {
-    poller: Arc<Mutex<OSCPoller>>,
-    state_handle: Arc<Mutex<StateHandle>>,
-    master_sequencer: Arc<Mutex<SequencerHandler>>
-}
-
-impl OSCRead {
-    fn scan(&self) {
-        match self.poller.lock().unwrap().poll() {
-            Ok(osc_packet) => {
-                match osc_packet {
-                    OscPacket::Message(osc_msg) => {
-                        self.handle_msg(osc_msg);
-                    }
-                    OscPacket::Bundle(osc_bundle) => {
-                        self.handle_bundle(osc_bundle);
-                    }
-                };
-            }
-            Err(error_msg) => {
-                log::warn!("{}", error_msg);
-            }
-        }
-    }
-
-    fn handle_bundle(&self, bundle: OscBundle) {
-        let try_tagged = TaggedBundle::new(&bundle);
-
-        info!("Tagged bundle received! {:?}", &bundle);
-        
-        match try_tagged {
-            Ok(tagged_bundle) => {
-
-                match tagged_bundle.bundle_tag.as_str() {
-                    "update_queue" => {
-                        match UpdateQueueMessage::from_bundle(tagged_bundle) {
-                            Ok(update_queue_msg) => {
-    
-                                let alias = update_queue_msg.alias.clone();
-    
-                                info!("Updating queue for {}", &alias);
-                                self.master_sequencer.lock().unwrap().queue_sequence(
-                                    &alias, update_queue_msg.messages
-                                );
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse update_queue message: {}", e);
-                            }
-                        }
-                    },
-                    _ => {
-                        info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
-                    }
-                } 
-            }
-            Err(e) => info!("Received bundle not parsable as taggedbundle: {}", e),
-        }
-    }
-
-    fn handle_msg(&self, osc_msg: OscMessage) {
-
-        match osc_msg.addr.as_str() {
-            "/set_bpm" => {
-                let args = osc_msg.clone().args;
-                let arg = args.get(0).clone();
-                match arg {
-                    None => {
-                        warn!("Unable to parse set_bpm message (missing arg)")
-                    }
-                    Some(val) => {
-                        match val.clone().int() {
-                            None => {warn!("set_bpm arg not an int")}
-                            Some(contained_val) => {
-                                self.state_handle.lock().unwrap().bpm.replace(contained_val);
-    
-                            }
-                        }
-                    }
-                }    
-            },
-            "/play" => {
-                // No contents 
-            },
-            "/reset_all" => {
-                self.state_handle.lock().unwrap().reset.replace(true);
-            },
-            "/hard_stop" => {
-                self.state_handle.lock().unwrap().hard_stop.replace(true);
-            },
-            _ => {}
-
-        }
-
     }
 }
 
