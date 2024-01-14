@@ -38,12 +38,18 @@ pub enum ProcessedOsc {
     Bundle(TaggedBundle)
 }
 
-struct OSCRead {
+pub struct JDWOSCPoller {
     poller: OSCPoller,
 }
 
-impl OSCRead {
-    fn scan(&mut self) -> Result<ProcessedOsc, String> {
+// TODO: Rename whole file 
+impl JDWOSCPoller {
+
+    pub fn new() -> JDWOSCPoller {
+        JDWOSCPoller { poller: OSCPoller::new() }
+    }
+
+    pub fn scan(&mut self) -> Result<ProcessedOsc, String> {
         return match self.poller.poll() {
             Ok(osc_packet) => {
                 return match osc_packet {

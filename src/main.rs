@@ -12,6 +12,7 @@ use log::{debug, info, warn};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use simple_logger::SimpleLogger;
 use spin_sleep;
+use osc_read_daemon::{ProcessedOsc, JDWOSCPoller};
 
 use osc_model::{UpdateQueueMessage};
 
@@ -62,23 +63,99 @@ fn main() {
         midi_sync_counter: 0.0
     };
 
-
     thread::spawn(move || {
         main_loop.run();
     }); // end thread
 
-    let osc_read = OSCRead {
-        poller: osc_poller_handle,
+    let mut osc_daemon = OSCDaemon {
+        poller: JDWOSCPoller::new(),
         state_handle,
         master_sequencer: master_seq_handle.clone()
     };
 
     loop {
         // Take in osc messages
-        osc_read.scan();
+        osc_daemon.scan();
     }
 }
 
+// TODO: replaces OSCREAD 
+struct OSCDaemon {
+    poller: JDWOSCPoller,
+    state_handle: Arc<Mutex<StateHandle>>,
+    master_sequencer: Arc<Mutex<SequencerHandler>>
+}
+
+// TODO: Might be better inlined, but sketching is easier like htis 
+impl OSCDaemon {
+    fn scan(&mut self) {
+        match self.poller.scan() {
+            Ok(processed_osc) => {
+                match processed_osc {
+                    ProcessedOsc::Message(osc_msg) => {
+                        match osc_msg.addr.as_str() {
+                            "/set_bpm" => {
+                                let args = osc_msg.clone().args;
+                                let arg = args.get(0).clone();
+                                match arg {
+                                    None => {
+                                        warn!("Unable to parse set_bpm message (missing arg)")
+                                    }
+                                    Some(val) => {
+                                        match val.clone().int() {
+                                            None => {warn!("set_bpm arg not an int")}
+                                            Some(contained_val) => {
+                                                self.state_handle.lock().unwrap().bpm.replace(contained_val);
+                    
+                                            }
+                                        }
+                                    }
+                                }    
+                            },
+                            "/play" => {
+                                // No contents 
+                            },
+                            "/reset_all" => {
+                                self.state_handle.lock().unwrap().reset.replace(true);
+                            },
+                            "/hard_stop" => {
+                                self.state_handle.lock().unwrap().hard_stop.replace(true);
+                            },
+                            _ => {}
+                
+                        }
+                    },
+                    ProcessedOsc::Bundle(tagged_bundle) => {
+                        match tagged_bundle.bundle_tag.as_str() {
+                            "update_queue" => {
+                                match UpdateQueueMessage::from_bundle(tagged_bundle) {
+                                    Ok(update_queue_msg) => {
+            
+                                        let alias = update_queue_msg.alias.clone();
+            
+                                        info!("Updating queue for {}", &alias);
+                                        self.master_sequencer.lock().unwrap().queue_sequence(
+                                            &alias, update_queue_msg.messages
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to parse update_queue message: {}", e);
+                                    }
+                                }
+                            },
+                            _ => {
+                                info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
+                            }
+                        } 
+                    }
+                }
+            },
+            Err(msg) => {
+                info!("Error processing incoming osc: {}", msg);
+            } 
+        }
+    }
+}
 
 // Handle all incoming messages
 struct OSCRead {
@@ -114,28 +191,27 @@ impl OSCRead {
         match try_tagged {
             Ok(tagged_bundle) => {
 
-
-                if &tagged_bundle.bundle_tag == "update_queue" {
-                    let update_queue_msg_res = UpdateQueueMessage::from_bundle(tagged_bundle);
-
-                    match update_queue_msg_res {
-                        Ok(update_queue_msg) => {
-
-                            let alias = update_queue_msg.alias.clone();
-
-                            info!("Updating queue for {}", &alias);
-                            self.master_sequencer.lock().unwrap().queue_sequence(
-                                &alias, update_queue_msg.messages
-                            );
+                match tagged_bundle.bundle_tag.as_str() {
+                    "update_queue" => {
+                        match UpdateQueueMessage::from_bundle(tagged_bundle) {
+                            Ok(update_queue_msg) => {
+    
+                                let alias = update_queue_msg.alias.clone();
+    
+                                info!("Updating queue for {}", &alias);
+                                self.master_sequencer.lock().unwrap().queue_sequence(
+                                    &alias, update_queue_msg.messages
+                                );
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse update_queue message: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            warn!("Failed to parse update_queue message: {}", e);
-                        }
+                    },
+                    _ => {
+                        info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
                     }
-
-                } else {
-                    info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
-                }
+                } 
             }
             Err(e) => info!("Received bundle not parsable as taggedbundle: {}", e),
         }
