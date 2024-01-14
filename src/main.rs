@@ -27,6 +27,7 @@ mod queue;
 mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
+mod osc_read_daemon;
 
 pub struct StateHandle {
     reset: RefCell<bool>,
@@ -141,30 +142,39 @@ impl OSCRead {
     }
 
     fn handle_msg(&self, osc_msg: OscMessage) {
-        if osc_msg.addr == "/set_bpm" {
-            let args = osc_msg.clone().args;
-            let arg = args.get(0).clone();
-            match arg {
-                None => {
-                    warn!("Unable to parse set_bpm message (missing arg)")
-                }
-                Some(val) => {
-                    match val.clone().int() {
-                        None => {warn!("set_bpm arg not an int")}
-                        Some(contained_val) => {
-                            self.state_handle.lock().unwrap().bpm.replace(contained_val);
 
+        match osc_msg.addr.as_str() {
+            "/set_bpm" => {
+                let args = osc_msg.clone().args;
+                let arg = args.get(0).clone();
+                match arg {
+                    None => {
+                        warn!("Unable to parse set_bpm message (missing arg)")
+                    }
+                    Some(val) => {
+                        match val.clone().int() {
+                            None => {warn!("set_bpm arg not an int")}
+                            Some(contained_val) => {
+                                self.state_handle.lock().unwrap().bpm.replace(contained_val);
+    
+                            }
                         }
                     }
-                }
-            }
-        } else if osc_msg.addr == "/play" {
-            // No contents
-        } else if osc_msg.addr == "/reset_all" {
-            self.state_handle.lock().unwrap().reset.replace(true);
-        } else if osc_msg.addr == "/hard_stop" {
-            self.state_handle.lock().unwrap().hard_stop.replace(true);
+                }    
+            },
+            "/play" => {
+                // No contents 
+            },
+            "/reset_all" => {
+                self.state_handle.lock().unwrap().reset.replace(true);
+            },
+            "/hard_stop" => {
+                self.state_handle.lock().unwrap().hard_stop.replace(true);
+            },
+            _ => {}
+
         }
+
     }
 }
 

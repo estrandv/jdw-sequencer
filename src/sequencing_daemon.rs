@@ -3,6 +3,12 @@
     Rewrite of... Idunno, main loop? But with the new sequencer/master sequencer classes. 
     Should just tick based on bpm in a thread. 
 
+
+    TODO: 
+        - Clean up old main loop by extracting incoming osc handling
+        - Make a method for converting incoming osc to timeline-adjusted entries in osc packets 
+        - Backup old main, then use a new copy to implement this daemon in place of the old main loop 
+
 */
 
 use std::{sync::{Arc, Mutex}, thread};
@@ -39,7 +45,6 @@ fn start_live_loop <T: 'static + Clone + Send, F> (
         };
         last_loop_time = Some(this_loop_time.clone());
         info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
-
 
         // TODO: Start, stop, other state injections 
 
