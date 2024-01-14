@@ -6,17 +6,47 @@
 
     TODO: 
         - Clean up old main loop by extracting incoming osc handling
+            -> somewhat done! 
         - Make a method for converting incoming osc to timeline-adjusted entries in osc packets 
+            -> See below, working on it here but no usage yet 
         - Backup old main, then use a new copy to implement this daemon in place of the old main loop 
 
 */
 
-use std::{sync::{Arc, Mutex}, thread};
+use std::{sync::{Arc, Mutex}, thread, str::FromStr};
 
+use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc, Duration};
+use jdw_osc_lib::TimedOSCPacket;
 use log::{info, warn, debug};
+use rosc::OscPacket;
 
-use crate::{master_sequencer::MasterSequencer, midi_utils};
+use crate::{master_sequencer::MasterSequencer, midi_utils, sequencer::SequencerEntry};
+
+// TODO: Move to better place
+// NOTE: Rewrite of logic from queue.rs::shift_queue 
+pub fn to_sequence(input: Vec<TimedOSCPacket>) {
+
+
+    let mut new_sequence: Vec<SequencerEntry<OscPacket>> = vec![];
+    let mut new_timeline = BigDecimal::from_str("0.0").unwrap();
+
+    for packet in &input {
+        new_sequence.push(SequencerEntry::new(new_timeline.clone(), packet.packet.clone()));
+
+        // TODO: Not at all confident in this f32 to big conversion, but at least this is now the only place we do it ... 
+        let big_time = BigDecimal::from_str(&format!("{}", packet.time)).unwrap();
+
+        new_timeline += big_time;
+    }
+
+    // TODO: With no end beat, do we need to add a dud at the timeline end? Looking at sequencer.rs I really think we should. 
+    // Update: Nah, sequencer has "queue_end_beat" which we want to use. If this method should return detached data, that data
+    //  should be a struct that contains the vector as well as the end beat of new_timeline 
+
+}
+
+
 
 struct SequencingDaemonState {
     pub bpm: i32
