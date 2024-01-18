@@ -49,6 +49,17 @@ impl<T: Clone> MasterSequencer<T> {
         
     }
 
+    pub fn force_wipe(&mut self) {
+        self.active_sequencers = HashMap::new();
+        self.inactive_sequencers = HashMap::new();
+    
+    }
+
+    pub fn force_reset(&mut self) {
+        self.active_sequencers.iter_mut()
+        .for_each(|seq| seq.1.reset(BigDecimal::from_str("0.0")));
+    }
+
     pub fn reset_check(&mut self) {
 
         /*

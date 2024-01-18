@@ -87,19 +87,46 @@ fn start_live_loop <T: 'static + Clone + Send, F> (
         last_loop_time = Some(this_loop_time.clone());
         info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
 
-        // TODO: Start, stop, other state injections 
+        /*
+            Read input previously written to state via OSC 
+        */
 
         let current_bpm = state.lock().unwrap().bpm.clone();
+        let reset_requested = self.state_handle.lock().unwrap().reset.clone().into_inner();
+        let hard_stop_requested = self.state_handle.lock().unwrap().hard_stop.clone().into_inner();
+        {
+            self.state_handle.lock().unwrap().reset.replace(false);
+            self.state_handle.lock().unwrap().hard_stop.replace(false);
+        }
+        
+        
         let elapsed_beats = midi_utils::ms_to_beats_bd((elapsed_time).num_milliseconds(), current_bpm);
 
+
         /*
-            Tick the clock, collect Ts on time. 
+            TODO: Stop request 
+            - A stop means "Reset all sequencers and treat them as not started until a new start is received"
+            - Then, of course, there is also the FULL STOP, where all sequencers are simply eliminated 
+                -> This is what we do below, there is no regular stop currently! 
         */
-        master_sequencer.lock().unwrap().start_check();
-        master_sequencer.lock().unwrap().reset_check();
-        let collected = master_sequencer.lock().unwrap().tick(elapsed_beats).clone(); // TODO: Does it work without clone, or does that make lock eternal? 
-        
-        entry_operations(collected);
+        if hard_stop_requested {
+            master_sequencer.lock().unwrap().force_wipe();
+        } else {
+            /*
+                Tick the clock, collect Ts on time. 
+            */
+            master_sequencer.lock().unwrap().start_check();
+            
+            if reset_requested {
+                master_sequencer.lock().unwrap().force_reset();
+            } else {
+                master_sequencer.lock().unwrap().reset_check();
+            }
+            let collected = master_sequencer.lock().unwrap().tick(elapsed_beats).clone(); // TODO: Does it work without clone, or does that make lock eternal? 
+            
+            entry_operations(collected);
+        }
+
 
         /*
             Calculate time taken to execute this loop and log accordingly
