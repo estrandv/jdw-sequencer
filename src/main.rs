@@ -59,7 +59,7 @@ fn main() {
     let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
     let master = MasterSequencer::new(
-        master_sequencer::SequencerStartMode::WithNearestSequence,
+        master_sequencer::SequencerStartMode::WithLongestSequence,
          master_sequencer::SequencerResetMode::Individual
     );
     let master_handle = Arc::new(Mutex::new(master));
