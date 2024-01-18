@@ -16,7 +16,7 @@
 
 use std::{sync::{Arc, Mutex}, thread, str::FromStr, cell::RefCell};
 
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, FromPrimitive};
 use chrono::{DateTime, Utc, Duration};
 use jdw_osc_lib::TimedOSCPacket;
 use log::{info, warn, debug};
@@ -48,6 +48,8 @@ pub fn to_sequence(input: Vec<TimedOSCPacket>) -> OscSequencePayload {
 
         new_timeline += big_time;
     }
+
+    info!("END TIME WAS: {:?}", new_timeline);
 
     // TODO: Note the composite payload - sequencer.rs takes an end_beat for queue 
     OscSequencePayload {
@@ -94,7 +96,8 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
                 None => Duration::zero()
             };
             last_loop_time = Some(this_loop_time.clone());
-            info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
+            
+            //info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
 
             /*
                 Read input previously written to state via OSC 
@@ -106,11 +109,12 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
             {
                 state.lock().unwrap().reset.replace(false);
                 state.lock().unwrap().hard_stop.replace(false);
-            }
+            }            
             
-            
-            let elapsed_beats = midi_utils::ms_to_beats_bd((elapsed_time).num_milliseconds(), current_bpm.clone().into_inner());
+            let elapsed_microsec = BigDecimal::from_i64(elapsed_time.num_microseconds().unwrap()).unwrap();
+            let elapsed_beats = midi_utils::mcs_to_beats_bd(elapsed_microsec, current_bpm.clone().into_inner());
 
+            //info!("Elapsed beats: {}", elapsed_beats);
 
             /*
                 TODO: Stop request 

@@ -67,7 +67,7 @@ impl<T: Clone> Sequencer<T> {
 
             self.current_beat += beats;
     
-            let candidates = self
+            let candidates: Vec<T> = self
                 .active_sequence
                 .iter()
                 .filter(|n| {
@@ -76,7 +76,11 @@ impl<T: Clone> Sequencer<T> {
                 })
                 .map(|n| n.clone().contents.clone())
                 .collect();
-    
+
+            if !candidates.is_empty() {
+                info!("CANDIDATES ON BEAT: {}", self.current_beat.clone());
+            }
+
             // Note that entries up until this beat have been tick-returned and should not be returned again on later current_beats
             self.processed_beats = Some(self.current_beat.clone());
     
