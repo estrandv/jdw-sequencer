@@ -43,10 +43,7 @@ pub fn to_sequence(input: Vec<TimedOSCPacket>) -> OscSequencePayload {
     for packet in &input {
         new_sequence.push(SequencerEntry::new(new_timeline.clone(), packet.packet.clone()));
 
-        // TODO: Not at all confident in this f32 to big conversion, but at least this is now the only place we do it ... 
-        let big_time = BigDecimal::from_str(&format!("{}", packet.time)).unwrap();
-
-        new_timeline += big_time;
+        new_timeline += packet.time.clone();
     }
 
     info!("END TIME WAS: {:?}", new_timeline);
