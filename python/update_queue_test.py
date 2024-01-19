@@ -36,14 +36,14 @@ def simple_sample(family, index, time, offset):
 def simple_note(time, gate, freq):
     bun.add_content(create_timed(time, create_msg("/note_on_timed", ["gentle", "gentle_" + str(freq), gate, "freq", freq, "relT", 0.5])))
 
-simple_note(0.5, 3.2, 180.0)
-bun.add_content(simple_sample("bd", 1, 0.5, 0.02))
+simple_note("0.5", 3.2, 180.0)
+bun.add_content(simple_sample("bd", 1, "0.5", 0.02))
 #simple_note(0.0, 0.1, 320.0)
-bun.add_content(simple_sample("bd", 0, 1.0, 0.08))
+bun.add_content(simple_sample("bd", 0, "1.0", 0.08))
 #simple_note(0.0, 0.2, 180.0)
-bun.add_content(simple_sample("bd", 2, 1.0, 0.08))
+bun.add_content(simple_sample("bd", 2, "1.0", 0.08))
 #simple_note(0.25, 0.3, 200.0)
-bun.add_content(simple_sample("sn", 0, 1.0, 0.08))
+bun.add_content(simple_sample("sn", 0, "1.0", 0.08))
 
 # Other test: See if "feel" is different when not using sample lookup
 #message_bundle.add_content(create_timed(0.5, create_msg("/note_on_timed", ["sampler", "gentle_x", 0.5, "buf", 1.0])))
