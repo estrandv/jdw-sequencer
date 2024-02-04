@@ -16,7 +16,7 @@ use crate::config::{APPLICATION_IN_PORT, APPLICATION_OUT_PORT, APPLICATION_OUT_S
 */
 
 
-const BUFFER_SIZE: usize = 33072;
+const BUFFER_SIZE: usize = 333072;
 
 pub struct OSCClient {
     socket: UdpSocket,
@@ -71,6 +71,7 @@ impl OSCPoller {
         // Too low results in parts of large packets being dropped before receiving 
         // Heck, might just be some kind of buffer thing where I'm supposed to read 
         // multiple things but only end up reading the first.. . 
+        // UPDATE: Found no indication of this in documentation. :c
         let buf = [0u8; BUFFER_SIZE];
 
         OSCPoller {
