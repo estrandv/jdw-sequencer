@@ -11,6 +11,12 @@ use bigdecimal::BigDecimal;
 
 use crate::sequencer::{Sequencer, SequencerEntry};
 
+#[derive(Debug, Clone, PartialEq)]
+enum SequencerFinishAction {
+    Reset,
+    Wipe
+}
+
 pub enum SequencerResetMode {
     AllAfterLongestSequenceFinished,
     Individual
@@ -22,12 +28,27 @@ pub enum SequencerStartMode {
     Immediate
 }
 
+#[derive(Debug, Clone)]
+struct SequencerData<T: Clone> {
+    sequencer: Sequencer<T>,
+    finish_action: SequencerFinishAction,
+}
+
+impl<T: Clone> SequencerData<T> {
+    pub fn new(sequencer: Sequencer<T>) -> SequencerData<T>{
+        SequencerData {
+            sequencer,
+            finish_action: SequencerFinishAction::Reset // TODO: Functionality is there but not at all tested 
+        }
+    }
+}
+
 /* 
     Manages a set of underlying sequencers. 
 */
 pub struct MasterSequencer<T: Clone> {
-    active_sequencers: HashMap<String, Sequencer<T>>,
-    inactive_sequencers: HashMap<String, Sequencer<T>>,
+    active_sequencers: HashMap<String, SequencerData<T>>,
+    inactive_sequencers: HashMap<String, SequencerData<T>>,
     pub sequencer_start_mode: SequencerStartMode,
     pub sequencer_reset_mode: SequencerResetMode
 }
@@ -44,7 +65,7 @@ impl<T: Clone> MasterSequencer<T> {
 
     pub fn tick(&mut self, beats: BigDecimal) -> Vec<T> {
         self.active_sequencers.iter_mut()
-            .flat_map(|seq| seq.1.tick(beats.clone()))
+            .flat_map(|seq| seq.1.sequencer.tick(beats.clone()))
             .collect()
         
     }
@@ -57,7 +78,12 @@ impl<T: Clone> MasterSequencer<T> {
 
     pub fn force_reset(&mut self) {
         self.active_sequencers.iter_mut()
-        .for_each(|seq| seq.1.reset(BigDecimal::from_str("0.0").unwrap()));
+        .for_each(|seq| seq.1.sequencer.reset(BigDecimal::from_str("0.0").unwrap()));
+    }
+
+    // Set all sequencers to wipe after they finish 
+    pub fn end_after_finish(&mut self) {
+        self.active_sequencers.iter_mut().for_each(|entry| entry.1.finish_action = SequencerFinishAction::Wipe);
     }
 
     pub fn reset_check(&mut self) {
@@ -71,18 +97,24 @@ impl<T: Clone> MasterSequencer<T> {
         match self.sequencer_reset_mode {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
                 if self.longest_sequence_finished() {
+
+                    self.active_sequencers.retain(|f, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
+
                     let overshoot = self.get_longest_overshoot();
                     self.active_sequencers.iter_mut()
-                        .filter(|seq| seq.1.is_finished())
-                        .for_each(|seq| seq.1.reset(overshoot.clone()));
+                        .filter(|seq| seq.1.sequencer.is_finished())
+                        .for_each(|seq| seq.1.sequencer.reset(overshoot.clone()));
                 }
             },
             SequencerResetMode::Individual => {
+
+                self.active_sequencers.retain(|f, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
+
                 self.active_sequencers.iter_mut()
-                    .filter(|seq| seq.1.is_finished())
+                    .filter(|seq| seq.1.sequencer.is_finished())
                     .for_each(|seq| {
-                        let overshoot = seq.1.get_overshoot();
-                        seq.1.reset(overshoot);
+                        let overshoot = seq.1.sequencer.get_overshoot();
+                        seq.1.sequencer.reset(overshoot);
                     });
             },
         }
@@ -99,12 +131,14 @@ impl<T: Clone> MasterSequencer<T> {
 
         if existing.is_some() {
             existing.map(|seq| {
-                seq.queue(entries, end_beat);
+                seq.sequencer.queue(entries, end_beat);
+                seq.finish_action = SequencerFinishAction::Reset; // NOTE: Feels intuitive; if you re-queue a sequence you implicitly want it to keep going. 
             });
         } else {
             let mut new_seq = Sequencer::new();
             new_seq.queue(entries, end_beat);
-            self.inactive_sequencers.insert(sequencer_alias.to_string(), new_seq);
+            let data = SequencerData::new(new_seq);
+            self.inactive_sequencers.insert(sequencer_alias.to_string(), data);
         }
     }
 
@@ -128,7 +162,7 @@ impl<T: Clone> MasterSequencer<T> {
     }
 
     fn count_finished(&self) -> usize{
-        self.active_sequencers.iter().filter(|seq| seq.1.is_finished()).count()
+        self.active_sequencers.iter().filter(|seq| seq.1.sequencer.is_finished()).count()
     }
 
     fn count_started(&self) -> usize {
@@ -137,19 +171,19 @@ impl<T: Clone> MasterSequencer<T> {
 
     fn longest_sequence_finished(&self) -> bool {
         let longest_sequence = self.active_sequencers.iter()
-            .max_by(|seq1, seq2| seq1.1.end_beat.cmp(&seq2.1.end_beat))
+            .max_by(|seq1, seq2| seq1.1.sequencer.end_beat.cmp(&seq2.1.sequencer.end_beat))
             .map(|seq| seq.1);
 
-        longest_sequence.map(|seq| seq.is_finished()).unwrap_or(false)
+        longest_sequence.map(|seq| seq.sequencer.is_finished()).unwrap_or(false)
 
     }
 
     fn get_longest_overshoot(&self) -> BigDecimal {
         let longest_sequence = self.active_sequencers.iter()
-            .max_by(|seq1, seq2| seq1.1.end_beat.cmp(&seq2.1.end_beat))
+            .max_by(|seq1, seq2| seq1.1.sequencer.end_beat.cmp(&seq2.1.sequencer.end_beat))
             .map(|seq| seq.1);
 
-        longest_sequence.map(|seq| seq.get_overshoot()).unwrap_or(BigDecimal::from_str("0.0").unwrap())
+        longest_sequence.map(|seq| seq.sequencer.get_overshoot()).unwrap_or(BigDecimal::from_str("0.0").unwrap())
 
     }
 

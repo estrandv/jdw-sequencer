@@ -27,6 +27,7 @@ impl<T: Clone> SequencerEntry<T> {
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub struct Sequencer<T: Clone> {
     pub active_sequence: Vec<SequencerEntry<T>>, // The current sequence, accessed with tick() until end_beat is reached. 

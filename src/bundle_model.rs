@@ -10,6 +10,8 @@ use jdw_osc_lib::{OscArgHandler, TaggedBundle, TimedOSCPacket};
 */
 
 // Just a collection of the below, useful for wiping non-mentioned queues 
+// TODO: Usage: (1) receive, (2) mark all non-contained aliases as ending on next loop, (3) make sure newly queued aliases also remove that flag if there 
+// NOTE: Might also be viable, if batches are very large, to simply send "stop queue" messages for everything and then requeue
 /*
     Tagged bundle example: 
     [info: batch_update_queue]
