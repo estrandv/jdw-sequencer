@@ -1,22 +1,21 @@
 #![feature(result_flattening, proc_macro_hygiene, decl_macro)]
 
 
-use std::{cell::RefCell, println, thread};
-use std::borrow::Borrow;
-use std::process::exit;
+use std::cell::RefCell;
+
+
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Duration, Utc};
-use log::{debug, info, warn};
+use chrono::Utc;
+use log::{info, warn};
 use master_sequencer::MasterSequencer;
-use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
+use rosc::OscPacket;
 use sequencing_daemon::SequencingDaemonState;
 use simple_logger::SimpleLogger;
 
 use bundle_model::{UpdateQueueMessage};
 
-use crate::config::TICK_TIME_US;
-use crate::osc_communication::{OSCClient, OSCPoller};
+use crate::osc_communication::OSCClient;
 
 pub mod midi_utils;
 mod osc_communication;
@@ -25,7 +24,6 @@ mod config;
 mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
-mod jdw_osc_polling;
 mod osc_stack;
 
 
@@ -107,13 +105,13 @@ fn main() {
                 }
             }    
         })
-        .on_message("/reset_all", &|msg| {
+        .on_message("/reset_all", &|_msg| {
             state_handle.lock().unwrap().reset.replace(true);
         })
-        .on_message("/hard_stop", &|msg| {
+        .on_message("/hard_stop", &|_msg| {
             state_handle.lock().unwrap().hard_stop.replace(true);
         })
-        .on_message("/wipe_on_finish", &|msg| {
+        .on_message("/wipe_on_finish", &|_msg| {
             master_handle.lock().unwrap().end_after_finish();
         })
         .on_tbundle("update_queue", &|tbundle| {

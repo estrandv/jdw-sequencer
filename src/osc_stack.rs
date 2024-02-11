@@ -70,7 +70,7 @@ impl <'a> OSCStack<'a> {
 
             match sock.recv_from(&mut buf) {
                 Ok((size, _)) => {
-                    let (rem, packet) = rosc::decoder::decode_udp(&buf[..size]).unwrap();
+                    let (_rem, packet) = rosc::decoder::decode_udp(&buf[..size]).unwrap();
 
                     match packet {
                         OscPacket::Message(osc_msg) => {

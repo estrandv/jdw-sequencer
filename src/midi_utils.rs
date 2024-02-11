@@ -5,7 +5,7 @@
 use std::str::FromStr;
 
 use bigdecimal::{BigDecimal, FromPrimitive};
-use log::info;
+
 
 pub fn beats_to_micro_seconds(beat: f32, bpm: i32) -> i64 {
     (beat * (60.0 / bpm as f32) * 1000000.0) as i64

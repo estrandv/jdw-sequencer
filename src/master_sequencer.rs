@@ -98,7 +98,7 @@ impl<T: Clone> MasterSequencer<T> {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
                 if self.longest_sequence_finished() {
 
-                    self.active_sequencers.retain(|f, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
+                    self.active_sequencers.retain(|_, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
 
                     let overshoot = self.get_longest_overshoot();
                     self.active_sequencers.iter_mut()
@@ -108,7 +108,7 @@ impl<T: Clone> MasterSequencer<T> {
             },
             SequencerResetMode::Individual => {
 
-                self.active_sequencers.retain(|f, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
+                self.active_sequencers.retain(|_, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
 
                 self.active_sequencers.iter_mut()
                     .filter(|seq| seq.1.sequencer.is_finished())

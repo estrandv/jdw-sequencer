@@ -1,4 +1,4 @@
-use rosc::{OscBundle, OscMessage, OscPacket};
+use rosc::OscPacket;
 
 use jdw_osc_lib::{OscArgHandler, TaggedBundle, TimedOSCPacket};
 
