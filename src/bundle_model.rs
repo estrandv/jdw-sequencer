@@ -1,6 +1,6 @@
 use rosc::OscPacket;
 
-use jdw_osc_lib::{OscArgHandler, TaggedBundle, TimedOSCPacket};
+use jdw_osc_lib::model::{OscArgHandler, TaggedBundle, TimedOSCPacket};
 
 
 /*

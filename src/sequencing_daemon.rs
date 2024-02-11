@@ -18,7 +18,7 @@ use std::{sync::{Arc, Mutex}, thread, str::FromStr, cell::RefCell};
 
 use bigdecimal::{BigDecimal, FromPrimitive};
 use chrono::{DateTime, Utc, Duration};
-use jdw_osc_lib::TimedOSCPacket;
+use jdw_osc_lib::model::TimedOSCPacket;
 use log::{info, warn, debug};
 use rosc::OscPacket;
 

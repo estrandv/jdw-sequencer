@@ -16,6 +16,7 @@ use simple_logger::SimpleLogger;
 use bundle_model::{UpdateQueueMessage};
 
 use crate::osc_communication::OSCClient;
+use jdw_osc_lib::osc_stack::OSCStack;
 
 pub mod midi_utils;
 mod osc_communication;
@@ -24,7 +25,6 @@ mod config;
 mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
-mod osc_stack;
 
 
 /*
@@ -87,7 +87,7 @@ fn main() {
     });
 
     let addr = config::get_addr(config::APPLICATION_IN_PORT);
-    osc_stack::OSCStack::init(addr)
+    OSCStack::init(addr)
         .on_message("/set_bpm", &|msg| {
             let args = msg.clone().args;
             let arg = args.get(0).clone();
