@@ -20,14 +20,14 @@ use std::str::FromStr;
 
 use rosc::{OscPacket, OscMessage};
 
-struct OSCStack {
-    message_operations: HashMap<String, &'static dyn Fn(OscMessage)>,
-    tbundle_operations: HashMap<String, &'static dyn Fn(TaggedBundle)>,
-    host_url: &'static str
+pub struct OSCStack<'a> {
+    message_operations: HashMap<String, &'a dyn Fn(OscMessage)>,
+    tbundle_operations: HashMap<String, &'a dyn Fn(TaggedBundle)>,
+    host_url: String
 }
 
-impl OSCStack {
-    pub fn init(host_url: &'static str) -> OSCStack {
+impl <'a> OSCStack<'a> {
+    pub fn init(host_url: String) -> OSCStack<'a> {
         OSCStack {
             message_operations: HashMap::new(),
             tbundle_operations: HashMap::new(),
@@ -35,12 +35,14 @@ impl OSCStack {
         }
     }
 
-    pub fn on_message(&mut self, tag: &str, operations: &'static dyn Fn(OscMessage)) {
+    pub fn on_message(&'a mut self, tag: &str, operations: &'a dyn Fn(OscMessage)) -> &mut OSCStack {
         self.message_operations.insert(tag.to_string(), operations);
+        self
     }
 
-    pub fn on_tbundle(&mut self, tag: &str, operations: &'static dyn Fn(TaggedBundle)) {
+    pub fn on_tbundle(&'a mut self, tag: &str, operations: &'a dyn Fn(TaggedBundle))  -> &mut OSCStack {
         self.tbundle_operations.insert(tag.to_string(), operations);
+        self
     }
 
     pub fn begin(&self) {

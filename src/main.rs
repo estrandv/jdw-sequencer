@@ -7,14 +7,11 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-use jdw_osc_lib::TaggedBundle;
 use log::{debug, info, warn};
 use master_sequencer::MasterSequencer;
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use sequencing_daemon::SequencingDaemonState;
 use simple_logger::SimpleLogger;
-use spin_sleep;
-use jdw_osc_polling::{ProcessedOsc, JDWOSCPoller};
 
 use bundle_model::{UpdateQueueMessage};
 
@@ -91,99 +88,53 @@ fn main() {
         }
     });
 
-    let mut osc_daemon = OSCDaemon {
-        poller: JDWOSCPoller::new(),
-        state_handle,
-        master_sequencer: master_handle
-    };
-
-    loop {
-        // Take in osc messages
-        osc_daemon.scan();
-    }
-}
-
-// TODO: Can be moved to its own file 
-struct OSCDaemon {
-    poller: JDWOSCPoller,
-    state_handle: Arc<Mutex<SequencingDaemonState>>,
-    master_sequencer: Arc<Mutex<MasterSequencer<OscPacket>>>
-}
-
-// TODO: Might be better inlined, but sketching is easier like htis 
-impl OSCDaemon {
-    fn scan(&mut self) {
-        match self.poller.scan() {
-            Ok(processed_osc) => {
-                match processed_osc {
-                    ProcessedOsc::Message(osc_msg) => {
-                        match osc_msg.addr.as_str() {
-                            "/set_bpm" => {
-                                let args = osc_msg.clone().args;
-                                let arg = args.get(0).clone();
-                                match arg {
-                                    None => {
-                                        warn!("Unable to parse set_bpm message (missing arg)")
-                                    }
-                                    Some(val) => {
-                                        match val.clone().int() {
-                                            None => {warn!("set_bpm arg not an int")}
-                                            Some(contained_val) => {
-                                                self.state_handle.lock().unwrap().bpm.replace(contained_val);
-                    
-                                            }
-                                        }
-                                    }
-                                }    
-                            },
-                            "/play" => {
-                                // No contents 
-                            },
-                            "/reset_all" => {
-                                self.state_handle.lock().unwrap().reset.replace(true);
-                            },
-                            "/hard_stop" => {
-                                self.state_handle.lock().unwrap().hard_stop.replace(true);
-                            },
-                            "/wipe_on_finish" => {
-                                self.master_sequencer.lock().unwrap().end_after_finish();
-                            }
-                            _ => {}
-                
+    let addr = config::get_addr(config::APPLICATION_IN_PORT);
+    osc_stack::OSCStack::init(addr)
+        .on_message("/set_bpm", &|msg| {
+            let args = msg.clone().args;
+            let arg = args.get(0).clone();
+            match arg {
+                None => {
+                    warn!("Unable to parse set_bpm message (missing arg)")
+                }
+                Some(val) => {
+                    match val.clone().int() {
+                        None => {warn!("set_bpm arg not an int")}
+                        Some(contained_val) => {
+                            state_handle.lock().unwrap().bpm.replace(contained_val);
                         }
-                    },
-                    ProcessedOsc::Bundle(tagged_bundle) => {
-                        match tagged_bundle.bundle_tag.as_str() {
-                            "update_queue" => {
-                                match UpdateQueueMessage::from_bundle(tagged_bundle) {
-                                    Ok(update_queue_msg) => {
-            
-                                        let alias = update_queue_msg.alias.clone();
-
-                                        let payload = sequencing_daemon::to_sequence(update_queue_msg.messages);
-            
-                                        info!("Updating queue for {}", &alias);
-                                        self.master_sequencer.lock().unwrap().queue(
-                                            &alias, 
-                                            payload.message_sequence, 
-                                            payload.end_beat
-                                        )
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to parse update_queue message: {}", e);
-                                    }
-                                }
-                            },
-                            _ => {
-                                info!("Unknown tag: {}", &tagged_bundle.bundle_tag)
-                            }
-                        } 
                     }
                 }
-            },
-            Err(msg) => {
-                info!("Error processing incoming osc: {}", msg);
-            } 
-        }
-    }
+            }    
+        })
+        .on_message("/reset_all", &|msg| {
+            state_handle.lock().unwrap().reset.replace(true);
+        })
+        .on_message("/hard_stop", &|msg| {
+            state_handle.lock().unwrap().hard_stop.replace(true);
+        })
+        .on_message("/wipe_on_finish", &|msg| {
+            master_handle.lock().unwrap().end_after_finish();
+        })
+        .on_tbundle("update_queue", &|tbundle| {
+            match UpdateQueueMessage::from_bundle(tbundle) {
+                Ok(update_queue_msg) => {
+
+                    let alias = update_queue_msg.alias.clone();
+
+                    let payload = sequencing_daemon::to_sequence(update_queue_msg.messages);
+
+                    info!("Updating queue for {}", &alias);
+                    master_handle.lock().unwrap().queue(
+                        &alias, 
+                        payload.message_sequence, 
+                        payload.end_beat
+                    )
+                }
+                Err(e) => {
+                    warn!("Failed to parse update_queue message: {}", e);
+                }
+            }
+        })
+        .begin();
 }
