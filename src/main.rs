@@ -29,6 +29,7 @@ mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
 mod jdw_osc_polling;
+mod osc_stack;
 
 
 /*
@@ -144,6 +145,9 @@ impl OSCDaemon {
                             "/hard_stop" => {
                                 self.state_handle.lock().unwrap().hard_stop.replace(true);
                             },
+                            "/wipe_on_finish" => {
+                                self.master_sequencer.lock().unwrap().end_after_finish();
+                            }
                             _ => {}
                 
                         }

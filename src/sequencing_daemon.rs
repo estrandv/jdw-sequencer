@@ -118,6 +118,11 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
                 - A stop means "Reset all sequencers and treat them as not started until a new start is received"
                 - Then, of course, there is also the FULL STOP, where all sequencers are simply eliminated 
                     -> This is what we do below, there is no regular stop currently! 
+
+                TODO TODO: Do we really need a state? 
+                    - I think some initial idea was that e.g. the wipe or force_reset should happen at a particular place
+                    - This can probably be handled with closures if you know how to write them, but I'm also kinda sure 
+                        that most things can just happen immediately 
             */
             if hard_stop_requested {
                 master_sequencer.lock().unwrap().force_wipe();
