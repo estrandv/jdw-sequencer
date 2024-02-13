@@ -1,7 +1,7 @@
 [package]
-name = "jdw-sequencer-neo"
+name = "jdw-sequencer"
 version = "0.1.0"
-authors = ["Emstrevk <emil.strandvik@protonmail.com>"]
+authors = ["estrandv <emil.strandvik@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,4 +22,4 @@ tracing-futures = "0.2.5"
 
 log = "0.4.17"
 simple_logger = "2.2.0"
-jdw-osc-lib = { git = "ssh://git@bitbucket.org/Emstrevk/jdw-osc-lib.git", branch = "master" }
+jdw-osc-lib = { git = "https://github.com/estrandv/jdw-osc-lib.git", branch = "master" }
