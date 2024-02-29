@@ -100,12 +100,10 @@ impl<T: Clone> MasterSequencer<T> {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
                 if self.longest_sequence_finished() {
 
-                    info!("TRIGGERED RESET");
-
                     // remove one shot finished sequencers
                     self.active_sequencers.retain(|_, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
 
-                    let overshoot = self.get_longest_overshoot();
+                    let overshoot = self.get_longest_sequence_overshoot();
                     self.active_sequencers.iter_mut()
                         .filter(|seq| seq.1.sequencer.is_finished())
                         .for_each(|seq| seq.1.sequencer.reset(overshoot.clone()));
@@ -118,12 +116,6 @@ impl<T: Clone> MasterSequencer<T> {
                 self.active_sequencers.iter_mut()
                     .filter(|seq| seq.1.sequencer.is_finished())
                     .for_each(|seq| {
-                        info!("TRIGGERED RESET");
-
-                        // TODO: Found no-start bug for one-shot
-                        // A reset is required to move queue into active
-                        // Thus we need some kind of start-check connected here
-
                         let overshoot = seq.1.sequencer.get_overshoot();
                         seq.1.sequencer.reset(overshoot);
                     });
@@ -164,14 +156,22 @@ impl<T: Clone> MasterSequencer<T> {
             SequencerStartMode::Immediate => true,
         };
 
+        let start_overshoot = match self.sequencer_start_mode {
+            SequencerStartMode::WithLongestSequence => self.get_longest_sequence_overshoot(),
+            // TODO: Not 100% safe with this, here or in the reset check. Should we grab the most recently finished overshoot?
+            SequencerStartMode::WithNearestSequence => BigDecimal::from_str("0.0").unwrap(),
+            SequencerStartMode::Immediate => BigDecimal::from_str("0.0").unwrap(),
+        };
+
         let should_start = start_mode_ok && !self.inactive_sequencers.is_empty();
 
         if should_start {
             for entry in self.inactive_sequencers.iter() {
                 let mut starting_sequencer = entry.1.clone();
                 // Avoid other reset-check rules for starting sequencers
-                info!("TODO: Experimental immediate-start-reset triggered");
-                starting_sequencer.sequencer.reset(BigDecimal::from_str("0.0").unwrap());
+                // Crap - I think offset is important here
+                info!("TODO: Experimental immediate-start-reset triggered - possible source of overshoot bug");
+                starting_sequencer.sequencer.reset(start_overshoot.clone());
                 self.active_sequencers.insert(entry.0.to_string(), starting_sequencer);
             }
             self.inactive_sequencers.clear();
@@ -192,11 +192,11 @@ impl<T: Clone> MasterSequencer<T> {
             .max_by(|seq1, seq2| seq1.1.sequencer.end_beat.cmp(&seq2.1.sequencer.end_beat))
             .map(|seq| seq.1);
 
-        longest_sequence.map(|seq| seq.sequencer.is_finished()).unwrap_or(false)
+        longest_sequence.map(|seq| seq.sequencer.is_finished()).unwrap_or(true)
 
     }
 
-    fn get_longest_overshoot(&self) -> BigDecimal {
+    fn get_longest_sequence_overshoot(&self) -> BigDecimal {
         let longest_sequence = self.active_sequencers.iter()
             .max_by(|seq1, seq2| seq1.1.sequencer.end_beat.cmp(&seq2.1.sequencer.end_beat))
             .map(|seq| seq.1);
