@@ -25,7 +25,7 @@ client = udp_client.SimpleUDPClient("127.0.0.1", 14441)
 # TODO: Explain parts and name args
 main_bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
 main_bundle.add_content(create_msg("/bundle_info", ["update_queue"]))
-main_bundle.add_content(create_msg("/update_queue_info", ["python_test_queue"]))
+main_bundle.add_content(create_msg("/update_queue_info", ["python_test_queue", 1])) # One shot flag == 1
 
 bun = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
 

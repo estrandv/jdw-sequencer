@@ -8,6 +8,8 @@
 use std::{collections::HashMap, hash::Hash, str::FromStr};
 
 use bigdecimal::BigDecimal;
+use bigdecimal::num_traits::one;
+use log::info;
 
 use crate::sequencer::{Sequencer, SequencerEntry};
 
@@ -35,10 +37,10 @@ struct SequencerData<T: Clone> {
 }
 
 impl<T: Clone> SequencerData<T> {
-    pub fn new(sequencer: Sequencer<T>) -> SequencerData<T>{
+    pub fn new(sequencer: Sequencer<T>, finish_action: SequencerFinishAction) -> SequencerData<T>{
         SequencerData {
             sequencer,
-            finish_action: SequencerFinishAction::Reset // TODO: Functionality is there but not at all tested 
+            finish_action
         }
     }
 }
@@ -98,6 +100,9 @@ impl<T: Clone> MasterSequencer<T> {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
                 if self.longest_sequence_finished() {
 
+                    info!("TRIGGERED RESET");
+
+                    // remove one shot finished sequencers
                     self.active_sequencers.retain(|_, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
 
                     let overshoot = self.get_longest_overshoot();
@@ -113,6 +118,12 @@ impl<T: Clone> MasterSequencer<T> {
                 self.active_sequencers.iter_mut()
                     .filter(|seq| seq.1.sequencer.is_finished())
                     .for_each(|seq| {
+                        info!("TRIGGERED RESET");
+
+                        // TODO: Found no-start bug for one-shot
+                        // A reset is required to move queue into active
+                        // Thus we need some kind of start-check connected here
+
                         let overshoot = seq.1.sequencer.get_overshoot();
                         seq.1.sequencer.reset(overshoot);
                     });
@@ -124,20 +135,23 @@ impl<T: Clone> MasterSequencer<T> {
     /*
         Queue the entries for the given sequencer alias, creating a new inactive sequencer if necessary
     */
-    pub fn queue(&mut self, sequencer_alias: &str, entries: Vec<SequencerEntry<T>>, end_beat: BigDecimal) {
+    pub fn queue(&mut self, sequencer_alias: &str, entries: Vec<SequencerEntry<T>>, end_beat: BigDecimal, one_shot: bool) {
+
         let existing = self.active_sequencers.get_mut(sequencer_alias).or(
             self.inactive_sequencers.get_mut(sequencer_alias)
-        ); 
+        );
+
+        let finish_action = if one_shot {SequencerFinishAction::Wipe} else {SequencerFinishAction::Reset};
 
         if existing.is_some() {
             existing.map(|seq| {
                 seq.sequencer.queue(entries, end_beat);
-                seq.finish_action = SequencerFinishAction::Reset; // NOTE: Feels intuitive; if you re-queue a sequence you implicitly want it to keep going. 
+                seq.finish_action = finish_action;
             });
         } else {
             let mut new_seq = Sequencer::new();
             new_seq.queue(entries, end_beat);
-            let data = SequencerData::new(new_seq);
+            let data = SequencerData::new(new_seq, finish_action);
             self.inactive_sequencers.insert(sequencer_alias.to_string(), data);
         }
     }
@@ -154,7 +168,11 @@ impl<T: Clone> MasterSequencer<T> {
 
         if should_start {
             for entry in self.inactive_sequencers.iter() {
-                self.active_sequencers.insert(entry.0.to_string(), entry.1.clone());
+                let mut starting_sequencer = entry.1.clone();
+                // Avoid other reset-check rules for starting sequencers
+                info!("TODO: Experimental immediate-start-reset triggered");
+                starting_sequencer.sequencer.reset(BigDecimal::from_str("0.0").unwrap());
+                self.active_sequencers.insert(entry.0.to_string(), starting_sequencer);
             }
             self.inactive_sequencers.clear();
         }
@@ -211,11 +229,11 @@ mod tests {
         let entries1 = vec![
             SequencerEntry::new(big("0.0"), "one"),
         ];
-        ms.queue("longest", entries1.clone(), big("3.0"));
+        ms.queue("longest", entries1.clone(), big("3.0"), false);
         ms.start_check();
         ms.reset_check();
-        ms.queue("first", entries1.clone(), big("1.0"));
-        ms.queue("second", entries1.clone(), big("1.5"));
+        ms.queue("first", entries1.clone(), big("1.0"), false);
+        ms.queue("second", entries1.clone(), big("1.5"), false);
         assert_eq!(ms.active_sequencers.len(), 1);
         assert_eq!(ms.inactive_sequencers.len(), 2);
         assert_eq!(ms.count_finished(), 0);
@@ -270,8 +288,8 @@ mod tests {
             SequencerEntry::new(big("0.2"), "three"),
         ];
 
-        ms.queue("first", entries1.clone(), big("1.0"));
-        ms.queue("second", entries1.clone(), big("1.5"));
+        ms.queue("first", entries1.clone(), big("1.0"), false);
+        ms.queue("second", entries1.clone(), big("1.5"), false);
         assert_eq!(ms.active_sequencers.len(), 0);
         assert_eq!(ms.inactive_sequencers.len(), 2);
         assert_eq!(ms.count_finished(), 0); 
@@ -295,9 +313,9 @@ mod tests {
             SequencerEntry::new(big("0.0"), "one"),
         ];
 
-        ms.queue("first", entries1.clone(), big("1.0"));
-        ms.queue("second", entries1.clone(), big("1.5"));
-        ms.queue("longest", entries1.clone(), big("3.0"));
+        ms.queue("first", entries1.clone(), big("1.0"), false);
+        ms.queue("second", entries1.clone(), big("1.5"), false);
+        ms.queue("longest", entries1.clone(), big("3.0"), false);
         assert_eq!(ms.active_sequencers.len(), 0);
         assert_eq!(ms.inactive_sequencers.len(), 3);
         assert_eq!(ms.count_finished(), 0); 
@@ -321,7 +339,7 @@ mod tests {
         assert_eq!(ms.count_finished(), 0);
 
         for sequence in ms.active_sequencers.iter() {
-            assert_eq!(sequence.1.current_beat, big("0.2"));
+            assert_eq!(sequence.1.sequencer.current_beat, big("0.2"));
         }
         
     }
@@ -334,11 +352,11 @@ mod tests {
 
         let mut ms: MasterSequencer<&str> = MasterSequencer::new(SequencerStartMode::Immediate, SequencerResetMode::Individual);
         let entries: Vec<SequencerEntry<&str>> = vec![];
-        ms.queue("one", entries.clone(), big("0.0"));
+        ms.queue("one", entries.clone(), big("0.0"), false);
         assert_eq!(1, ms.inactive_sequencers.len());
-        ms.queue("one", entries.clone(), big("0.0"));
+        ms.queue("one", entries.clone(), big("0.0"), false);
         assert_eq!(1, ms.inactive_sequencers.len());
-        ms.queue("two", entries.clone(), big("0.0"));
+        ms.queue("two", entries.clone(), big("0.0"), false);
         assert_eq!(2, ms.inactive_sequencers.len());
 
     }

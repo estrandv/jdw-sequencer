@@ -65,11 +65,13 @@ impl BatchUpdateQueuesMessage {
 */
 pub struct UpdateQueueMessage {
     pub alias: String,
+    pub one_shot: bool,
     pub messages: Vec<TimedOSCPacket>,
 }
 
 impl UpdateQueueMessage {
     pub fn from_bundle(bundle: TaggedBundle) -> Result<UpdateQueueMessage, String> {
+
         if &bundle.bundle_tag != "update_queue" {
             return Err(format!("Attempted to parse {} as update_queue bundle", &bundle.bundle_tag));
         }
@@ -77,6 +79,8 @@ impl UpdateQueueMessage {
         let info_msg = bundle.get_message(0)?;
         info_msg.expect_addr("/update_queue_info")?;
         let alias = info_msg.get_string_at(0, "alias")?;
+        let one_shot_flag = info_msg.get_int_at(1, "one_shot_flag").unwrap_or(0);
+        let one_shot = if one_shot_flag == 1 {true} else {false};
 
         let msg_bundle = bundle.get_bundle(1)?;
         let mut contained_timed_messages: Vec<TimedOSCPacket> = Vec::new();
@@ -93,6 +97,7 @@ impl UpdateQueueMessage {
 
         Ok(UpdateQueueMessage {
             alias,
+            one_shot,
             messages: contained_timed_messages
         })
        

@@ -46,9 +46,7 @@ pub fn to_sequence(input: Vec<TimedOSCPacket>) -> OscSequencePayload {
         new_timeline += packet.time.clone();
     }
 
-    info!("END TIME WAS: {:?}", new_timeline);
-
-    // TODO: Note the composite payload - sequencer.rs takes an end_beat for queue 
+    // TODO: Note the composite payload - sequencer.rs takes an end_beat for queue
     OscSequencePayload {
         message_sequence: new_sequence,
         end_beat: new_timeline

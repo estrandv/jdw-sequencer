@@ -123,11 +123,13 @@ fn main() {
                     let payload = sequencing_daemon::to_sequence(update_queue_msg.messages);
 
                     info!("Updating queue for {}", &alias);
+
                     master_handle.lock().unwrap().queue(
                         &alias, 
                         payload.message_sequence, 
-                        payload.end_beat
-                    )
+                        payload.end_beat,
+                        update_queue_msg.one_shot
+                    );
                 }
                 Err(e) => {
                     warn!("Failed to parse update_queue message: {}", e);
