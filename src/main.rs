@@ -35,13 +35,6 @@ mod sequencing_daemon;
 
 */
 
-
-pub struct StateHandle {
-    reset: RefCell<bool>,
-    hard_stop: RefCell<bool>,
-    bpm: RefCell<i32>,
-}
-
 fn main() {
 
     // Handles all log macros, e.g. "warn!()" to print info in terminal
@@ -66,16 +59,6 @@ fn main() {
         
         if !packets_to_send.is_empty() {
 
-
-            /*
-
-                TODO: There appears to be a little drift 
-                - I think overshoot appears to correct it, but that only happens when the loop finishes
-                - On each individual tick, the distance grows a little 
-                - I corrected a rather serious issue due to num_milliseconds not including microseconds, as well as some bigDecimal points 
-                - Now things follow the metronome by ear, at least, but fall off a little in the world of nanoseconds 
-
-            */
             info!("TICK! {:?}", Utc::now());
 
             let client_lock = osc_client_handle.lock().unwrap(); 

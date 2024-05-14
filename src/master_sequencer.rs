@@ -150,31 +150,32 @@ impl<T: Clone> MasterSequencer<T> {
 
     pub fn start_check(&mut self) {
 
-        let start_mode_ok = match self.sequencer_start_mode {
-            SequencerStartMode::WithLongestSequence => self.longest_sequence_finished() || self.count_started() == 0,
-            SequencerStartMode::WithNearestSequence => self.count_finished() > 0 || self.count_started() == 0,
-            SequencerStartMode::Immediate => true,
-        };
+        // Avoid expensive checks if there is nothing to start
+        if !self.inactive_sequencers.is_empty() {
+            let start_mode_ok = match self.sequencer_start_mode {
+                SequencerStartMode::WithLongestSequence => self.longest_sequence_finished() || self.count_started() == 0,
+                SequencerStartMode::WithNearestSequence => self.count_finished() > 0 || self.count_started() == 0,
+                SequencerStartMode::Immediate => true,
+            };
 
-        let start_overshoot = match self.sequencer_start_mode {
-            SequencerStartMode::WithLongestSequence => self.get_longest_sequence_overshoot(),
-            // TODO: Not 100% safe with this, here or in the reset check. Should we grab the most recently finished overshoot?
-            SequencerStartMode::WithNearestSequence => BigDecimal::from_str("0.0").unwrap(),
-            SequencerStartMode::Immediate => BigDecimal::from_str("0.0").unwrap(),
-        };
+            let start_overshoot = match self.sequencer_start_mode {
+                SequencerStartMode::WithLongestSequence => self.get_longest_sequence_overshoot(),
+                // TODO: Not 100% safe with this, here or in the reset check. Should we grab the most recently finished overshoot?
+                SequencerStartMode::WithNearestSequence => BigDecimal::from_str("0.0").unwrap(),
+                SequencerStartMode::Immediate => BigDecimal::from_str("0.0").unwrap(),
+            };
 
-        let should_start = start_mode_ok && !self.inactive_sequencers.is_empty();
-
-        if should_start {
-            for entry in self.inactive_sequencers.iter() {
-                let mut starting_sequencer = entry.1.clone();
-                // Avoid other reset-check rules for starting sequencers
-                // Crap - I think offset is important here
-                info!("TODO: Experimental immediate-start-reset triggered - possible source of overshoot bug");
-                starting_sequencer.sequencer.reset(start_overshoot.clone());
-                self.active_sequencers.insert(entry.0.to_string(), starting_sequencer);
+            if start_mode_ok {
+                for entry in self.inactive_sequencers.iter() {
+                    let mut starting_sequencer = entry.1.clone();
+                    // Avoid other reset-check rules for starting sequencers
+                    // Crap - I think offset is important here
+                    info!("TODO: Experimental immediate-start-reset triggered - possible source of overshoot bug");
+                    starting_sequencer.sequencer.reset(start_overshoot.clone());
+                    self.active_sequencers.insert(entry.0.to_string(), starting_sequencer);
+                }
+                self.inactive_sequencers.clear();
             }
-            self.inactive_sequencers.clear();
         }
 
     }

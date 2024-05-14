@@ -16,7 +16,7 @@ pub const APPLICATION_OUT_PORT: i32 = 13339; // jdw-osc-router
 pub const APPLICATION_OUT_SOCKET_PORT: i32 = 14444; // Messages send from this application will have this port listed as "from"
 
 // "US" = Microseconds
-pub const TICK_TIME_US: u64 = 5000; // 8ms?
+pub const TICK_TIME_US: u64 = 5000; // div1000 for ms
 
 // TODO: Enum / own struct for these?
 pub const SEQ_START_MODE_NEAREST: i32 = 0;

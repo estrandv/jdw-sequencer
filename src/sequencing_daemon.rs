@@ -1,23 +1,7 @@
-/*
-
-    Rewrite of... Idunno, main loop? But with the new sequencer/master sequencer classes. 
-    Should just tick based on bpm in a thread. 
-
-
-    TODO: 
-        - Clean up old main loop by extracting incoming osc handling
-            -> somewhat done! 
-        - Make a method for converting incoming osc to timeline-adjusted entries in osc packets 
-            -> See below, working on it here but no usage yet 
-        - re-implement the start/stop/reset logic from old main 
-        - Backup old main, then use a new copy to implement this daemon in place of the old main loop 
-
-*/
-
 use std::{sync::{Arc, Mutex}, thread, str::FromStr, cell::RefCell};
 
 use bigdecimal::{BigDecimal, FromPrimitive};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Utc, Duration, TimeDelta};
 use jdw_osc_lib::model::TimedOSCPacket;
 use log::{info, warn, debug};
 use rosc::OscPacket;
@@ -104,12 +88,11 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
             {
                 state.lock().unwrap().reset.replace(false);
                 state.lock().unwrap().hard_stop.replace(false);
-            }            
-            
-            let elapsed_microsec = BigDecimal::from_i64(elapsed_time.num_microseconds().unwrap()).unwrap();
-            let elapsed_beats = midi_utils::mcs_to_beats_bd(elapsed_microsec, current_bpm.clone().into_inner());
+            }
 
-            //info!("Elapsed beats: {}", elapsed_beats);
+            let elapsed_beats = midi_utils::duration_to_beats(elapsed_time, current_bpm.clone().into_inner());
+
+            info!("Elapsed beats: {}", elapsed_beats);
 
             /*
                 TODO: Stop request 
@@ -145,52 +128,39 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
                 Calculate time taken to execute this loop and log accordingly
             */
             let dur = Utc::now().time() - this_loop_time.time();
-            let time_taken = dur.num_microseconds().unwrap_or(0) as u64;
-            if time_taken > crate::config::TICK_TIME_US {
-                warn!("Operations performed (time: {}) exceed tick time, overflow...", time_taken);
+            let time_taken_ns = dur.num_nanoseconds().expect(
+                "Failed to resolve loop time as nanoseconds - is it too large to fit an i64?"
+            ) as u64; // Make it crash if unwrap fails - there is no good alternative to the real number, if subtracting from tick time!
+
+            let tick_time_ns = crate::config::TICK_TIME_US * 1000;
+
+            if time_taken_ns > tick_time_ns {
+                warn!("Operations performed (time: {}) exceed tick time, overflow...", time_taken_ns);
             }
             /*
                 Sleep until next loop tick
             */
             debug!("End loop: {}", this_loop_time);
-            sleeper.sleep(std::time::Duration::from_micros(crate::config::TICK_TIME_US));
+
+            /*
+                TODO.
+                Running some tests here.
+                Constant tick time appears to be more stable than the diffcheck, even though the
+                    diffcheck makes intuitive sense.
+                UPDATE: Constant tick time is -not- more stable when accounting for total drift, only appears that way for individual drift.
+                UPDATE: Began using NANOS instead of micros, which gave me (in combination with dynamic tick time) at least one example
+                    of long time (>6min) stable drift.
+                    - Nanos for elapsed beats calculation is perfect
+                    - Nanos for relative tick time (instead of previous micros) did not seem to improve things much if at all
+                        (but I don't see how it could be worse!).
+             */
+
+            //sleeper.sleep(std::time::Duration::from_micros(crate::config::TICK_TIME_US));
+            let time_left_until_tick = if time_taken_ns < tick_time_ns { tick_time_ns - time_taken_ns } else {0};
+            sleeper.sleep(std::time::Duration::from_nanos(time_left_until_tick));
 
         }
 
 
     });
 }
-
-
-
-// TODO: leftover, not really used atm 
-/*
-
-
-fn midi_sync(
-    &mut self,
-    elapsed_time: &Duration,
-    current_bpm: i32
-) {
-
-    let elapsed_beats = midi_utils::ms_to_beats((elapsed_time).num_milliseconds(), current_bpm);
-    self.midi_sync_counter+= elapsed_beats;
-
-    // MIDI Sync allegedly happens 24 times per beat
-    let denominator = 1.0 / 24.0;
-    if self.midi_sync_counter >= denominator {
-        self.osc_client.lock().unwrap().send(
-            OscPacket::Message(OscMessage {
-                addr: "/midi_sync".to_string(),
-                args: vec![]
-            })
-        );
-        self.midi_sync_counter = self.midi_sync_counter - denominator;
-    }
-}
-
-
-
-
-
- */
