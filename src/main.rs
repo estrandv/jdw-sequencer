@@ -5,10 +5,14 @@ use std::cell::RefCell;
 
 
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use chrono::Utc;
+use local_messaging::{LocalQueuePayload, LocalSequencerMessage};
 use log::{info, warn};
 use master_sequencer::MasterSequencer;
+use ringbuf::traits::{Producer, Split};
+use ringbuf::HeapRb;
 use rosc::OscPacket;
 use sequencing_daemon::SequencingDaemonState;
 use simple_logger::SimpleLogger;
@@ -26,6 +30,7 @@ mod config;
 mod sequencer;
 mod master_sequencer;
 mod sequencing_daemon;
+mod local_messaging;
 
 
 /*
@@ -36,6 +41,7 @@ mod sequencing_daemon;
 
 */
 
+
 fn main() {
 
     // Handles all log macros, e.g. "warn!()" to print info in terminal
@@ -43,34 +49,42 @@ fn main() {
         .with_level(config::LOG_LEVEL)
         .init().unwrap();
 
-    let state_handle: Arc<Mutex<SequencingDaemonState>> = Arc::new(Mutex::new(SequencingDaemonState::new(120)));
+    // NOTE: Expecting quite a few messages might arrive at the same time, account for this in sequencer loop 
+    let osc_pipe = HeapRb::<LocalSequencerMessage<OscPacket>>::new(100);
+    let (mut osc_pub, mut osc_sub) = osc_pipe.split();
+
+    // Note: Bit of a mess, but speed is not important for publishing here 
+    let osc_pub_mutex = Arc::new(Mutex::new(osc_pub));
 
     let osc_client = OSCClient::new();
-    let osc_client_handle = Arc::new(Mutex::new(osc_client));
 
     let master = MasterSequencer::new(
         master_sequencer::SequencerStartMode::WithLongestSequence,
          master_sequencer::SequencerResetMode::Individual
     );
-    let master_handle = Arc::new(Mutex::new(master));
 
     // Start sequencer loop in separate thread and handle ticked packets 
-    sequencing_daemon::start_live_loop::<OscPacket, _>(master_handle.clone(), state_handle.clone(), move |packets_to_send| {
+    sequencing_daemon::start_live_loop::<OscPacket, _>(
+        master,
+         120, 
+         osc_sub,
+         move |packets_to_send| {
         
         
         if !packets_to_send.is_empty() {
 
             info!("TICK! {:?}", Utc::now());
 
-            let client_lock = osc_client_handle.lock().unwrap(); 
-
             for packet in packets_to_send {
-                client_lock.send(packet);
+                osc_client.send(packet);
             }
         }
     });
 
+
     let addr = config::get_addr(config::APPLICATION_IN_PORT);
+    info!("STARTING OSC READER");
+
     OSCStack::init(addr)
         .on_message("/set_bpm", &|msg| {
             let args = msg.clone().args;
@@ -83,20 +97,24 @@ fn main() {
                     match val.clone().int() {
                         None => {warn!("set_bpm arg not an int")}
                         Some(contained_val) => {
-                            state_handle.lock().unwrap().bpm.replace(contained_val);
+                            info!("SET BPM");
+                            osc_pub_mutex.lock().unwrap().try_push(LocalSequencerMessage::SetBpm(contained_val)).unwrap();
                         }
                     }
                 }
             }    
         })
         .on_message("/reset_all", &|_msg| {
-            state_handle.lock().unwrap().reset.replace(true);
+            info!("RESET ALL");
+            osc_pub_mutex.lock().unwrap().try_push(LocalSequencerMessage::Reset).unwrap();
         })
         .on_message("/hard_stop", &|_msg| {
-            state_handle.lock().unwrap().hard_stop.replace(true);
+            info!("HARD STOP");
+            osc_pub_mutex.lock().unwrap().try_push(LocalSequencerMessage::HardStop).unwrap();
         })
         .on_message("/wipe_on_finish", &|_msg| {
-            master_handle.lock().unwrap().end_after_finish();
+            info!("WIPE ON FINISH");
+            osc_pub_mutex.lock().unwrap().try_push(LocalSequencerMessage::EndAfterFinish).unwrap();
         })
         .on_tbundle("batch_update_queues", &|tbundle| {
 
@@ -106,7 +124,8 @@ fn main() {
                     if batch_update_msg.stop_missing {
                         // Same as a call to "wipe on finish" - the order is then immediately reversed
                         //  for mentioned tracks when a new queue() is called
-                        master_handle.lock().unwrap().end_after_finish();
+                        info!("END AFTER FINISH");
+                        osc_pub_mutex.lock().unwrap().try_push(LocalSequencerMessage::EndAfterFinish).unwrap();
                     }
 
                     for update_queue_msg in batch_update_msg.update_queue_messages {
@@ -116,12 +135,15 @@ fn main() {
 
                         info!("Updating queue for {}", &alias);
 
-                        master_handle.lock().unwrap().queue(
-                            &alias,
-                            payload.message_sequence,
-                            payload.end_beat,
-                            update_queue_msg.one_shot
-                        );
+                        let payload_local = LocalSequencerMessage::Queue(LocalQueuePayload {
+                            sequencer_alias: alias,
+                            entries: payload.message_sequence,
+                            end_beat: payload.end_beat,
+                            one_shot: update_queue_msg.one_shot
+                        });
+
+                        info!("QUEUE CHANGED");
+                        osc_pub_mutex.lock().unwrap().try_push(payload_local).unwrap();
                     }
                 }
                 Err(e) => {
@@ -141,12 +163,14 @@ fn main() {
 
                     info!("Updating queue for {}", &alias);
 
-                    master_handle.lock().unwrap().queue(
-                        &alias, 
-                        payload.message_sequence, 
-                        payload.end_beat,
-                        update_queue_msg.one_shot
-                    );
+                    let payload_local = LocalSequencerMessage::Queue(LocalQueuePayload {
+                        sequencer_alias: alias,
+                        entries: payload.message_sequence,
+                        end_beat: payload.end_beat,
+                        one_shot: update_queue_msg.one_shot
+                    });
+
+                    osc_pub_mutex.lock().unwrap().try_push(payload_local).unwrap();
                 }
                 Err(e) => {
                     warn!("Failed to parse update_queue message: {}", e);
@@ -154,4 +178,5 @@ fn main() {
             }
         })
         .begin();
+
 }

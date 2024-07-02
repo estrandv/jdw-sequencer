@@ -1,12 +1,13 @@
-use std::{sync::{Arc, Mutex}, thread, str::FromStr, cell::RefCell};
+use std::{cell::RefCell, str::FromStr, sync::Arc, thread};
 
-use bigdecimal::{BigDecimal, FromPrimitive};
-use chrono::{DateTime, Utc, Duration, TimeDelta};
+use bigdecimal::{BigDecimal};
+use chrono::{DateTime, Utc, Duration};
 use jdw_osc_lib::model::TimedOSCPacket;
 use log::{info, warn, debug};
+use ringbuf::{storage::Heap, traits::Consumer, wrap::caching::Caching, SharedRb};
 use rosc::OscPacket;
 
-use crate::{master_sequencer::MasterSequencer, midi_utils, sequencer::SequencerEntry};
+use crate::{local_messaging::LocalSequencerMessage, master_sequencer::MasterSequencer, midi_utils, sequencer::SequencerEntry};
 
 /*
     Below struct and function are a rewrite of logic previously contained in queue.rs::shift_queue. 
@@ -53,11 +54,14 @@ impl SequencingDaemonState {
 }
 
 pub fn start_live_loop <T: 'static + Clone + Send, F> (
-    master_sequencer: Arc<Mutex<MasterSequencer<T>>>,
-    state: Arc<Mutex<SequencingDaemonState>>,
+    mut master_sequencer: MasterSequencer<T>,
+    bpm_param: i32,
+    mut message_sub: Caching<Arc<SharedRb<Heap<LocalSequencerMessage<T>>>>, false, true>,
     entry_operations: F
 ) where F: 'static + Send + Fn(Vec<T>) -> () {
     thread::spawn(move || {
+
+        let state = SequencingDaemonState::new(bpm_param);
 
         let mut last_loop_time: Option<DateTime<Utc>> = None;
 
@@ -82,12 +86,12 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
                 Read input previously written to state via OSC 
             */
 
-            let current_bpm = state.lock().unwrap().bpm.clone();
-            let reset_requested = state.lock().unwrap().reset.clone().into_inner();
-            let hard_stop_requested = state.lock().unwrap().hard_stop.clone().into_inner();
+            let current_bpm = state.bpm.clone();
+            let reset_requested = state.reset.clone().into_inner();
+            let hard_stop_requested = state.hard_stop.clone().into_inner();
             {
-                state.lock().unwrap().reset.replace(false);
-                state.lock().unwrap().hard_stop.replace(false);
+                state.reset.replace(false);
+                state.hard_stop.replace(false);
             }
 
             let elapsed_beats = midi_utils::duration_to_beats(elapsed_time, current_bpm.clone().into_inner());
@@ -106,21 +110,62 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
                         that most things can just happen immediately 
             */
             if hard_stop_requested {
-                master_sequencer.lock().unwrap().force_wipe();
+                master_sequencer.force_wipe();
             } else {
                 /*
                     Tick the clock, collect Ts on time. 
                 */
-                master_sequencer.lock().unwrap().start_check();
+                master_sequencer.start_check();
                 
                 if reset_requested {
-                    master_sequencer.lock().unwrap().force_reset();
+                    master_sequencer.force_reset();
                 } else {
-                    master_sequencer.lock().unwrap().reset_check();
+                    master_sequencer.reset_check();
                 }
-                let collected = master_sequencer.lock().unwrap().tick(elapsed_beats).clone(); // TODO: Does it work without clone, or does that make lock eternal? 
+                let collected = master_sequencer.tick(elapsed_beats).clone(); // TODO: Does it work without clone, or does that make lock eternal? 
                 
                 entry_operations(collected);
+            }
+
+
+            /*
+
+                Incoming state updates
+
+            */
+
+            // TODO: This new method renders a lot of old designs obsolete (e.g. this initial writing before later reading of state)
+            // TODO: Might want to limit how many messages we read at a time 
+            while let Some(msg) = message_sub.try_pop() {
+
+                print!("POP");
+
+                match msg {
+                    LocalSequencerMessage::HardStop => {state.hard_stop.replace(true);},
+                    LocalSequencerMessage::Reset => {state.reset.replace(true);},
+                    LocalSequencerMessage::SetBpm(new_bpm) => {state.bpm.replace(new_bpm);},
+                    LocalSequencerMessage::EndAfterFinish => {master_sequencer.end_after_finish();},
+                    LocalSequencerMessage::Queue(payload) => {
+                        info!("QUEUE RECEIVED");
+                        master_sequencer.queue(
+                            payload.sequencer_alias.as_str(),
+                             payload.entries, 
+                             payload.end_beat, 
+                             payload.one_shot
+                            );
+                    },
+                    // TODO: See handling of osc message, this isn't doing anything atm
+                    LocalSequencerMessage::BatchQueue(payloads) => {
+                        for payload in payloads {
+                            master_sequencer.queue(
+                                payload.sequencer_alias.as_str(),
+                                 payload.entries, 
+                                 payload.end_beat, 
+                                 payload.one_shot
+                                );
+                        }
+                    },
+                }
             }
 
 
