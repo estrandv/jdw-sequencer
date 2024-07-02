@@ -17,6 +17,7 @@ use bundle_model::{UpdateQueueMessage};
 
 use crate::osc_communication::OSCClient;
 use jdw_osc_lib::osc_stack::OSCStack;
+use crate::bundle_model::BatchUpdateQueuesMessage;
 
 pub mod midi_utils;
 mod osc_communication;
@@ -96,6 +97,39 @@ fn main() {
         })
         .on_message("/wipe_on_finish", &|_msg| {
             master_handle.lock().unwrap().end_after_finish();
+        })
+        .on_tbundle("batch_update_queues", &|tbundle| {
+
+            match BatchUpdateQueuesMessage::from_bundle(tbundle) {
+                Ok(batch_update_msg) => {
+
+                    if batch_update_msg.stop_missing {
+                        // Same as a call to "wipe on finish" - the order is then immediately reversed
+                        //  for mentioned tracks when a new queue() is called
+                        master_handle.lock().unwrap().end_after_finish();
+                    }
+
+                    for update_queue_msg in batch_update_msg.update_queue_messages {
+                        let alias = update_queue_msg.alias.clone();
+
+                        let payload = sequencing_daemon::to_sequence(update_queue_msg.messages);
+
+                        info!("Updating queue for {}", &alias);
+
+                        master_handle.lock().unwrap().queue(
+                            &alias,
+                            payload.message_sequence,
+                            payload.end_beat,
+                            update_queue_msg.one_shot
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to parse batch update queue message: {}", e);
+                }
+            }
+
+
         })
         .on_tbundle("update_queue", &|tbundle| {
             match UpdateQueueMessage::from_bundle(tbundle) {

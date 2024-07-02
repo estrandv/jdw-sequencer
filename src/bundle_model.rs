@@ -26,12 +26,12 @@ pub struct BatchUpdateQueuesMessage {
 
 impl BatchUpdateQueuesMessage {
     pub fn from_bundle(bundle: TaggedBundle) -> Result<BatchUpdateQueuesMessage, String> {
-        if &bundle.bundle_tag != "batch_update_queue" {
+        if &bundle.bundle_tag != "batch_update_queues" {
             return Err(format!("Attempted to parse {} as update_queue bundle", &bundle.bundle_tag));
         }
 
         let info_msg = bundle.get_message(0)?;
-        info_msg.expect_addr("/batch_update_queue_info")?;
+        info_msg.expect_addr("/batch_update_queues_info")?;
         let stop_missing_int = info_msg.get_int_at(0, "stop_missing")?;
 
         let msg_bundle = bundle.get_bundle(1)?;

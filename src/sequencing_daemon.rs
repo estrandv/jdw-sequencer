@@ -92,7 +92,7 @@ pub fn start_live_loop <T: 'static + Clone + Send, F> (
 
             let elapsed_beats = midi_utils::duration_to_beats(elapsed_time, current_bpm.clone().into_inner());
 
-            info!("Elapsed beats: {}", elapsed_beats);
+            //info!("Elapsed beats: {}", elapsed_beats);
 
             /*
                 TODO: Stop request 
