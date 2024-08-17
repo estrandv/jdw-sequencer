@@ -75,6 +75,12 @@ fn main() {
 
             info!("TICK! {:?}", Utc::now());
 
+            // TODO: This will always be a timing bottleneck when there are many packages
+            // Ideally, you send them all in a bundle, but something will eventually have to unpack it and send it on ...
+            // One might consider buffered sending for more even volumes (e.g. 5 messages per loop), but if that is another
+            // app in itself there is a translation cost ... 
+            // It is however easy to place a simple buffer right here. Might be worth trying to even out the massive drop on 0.0,
+            //  although the eventual delay for buffered notes might be a bit too noticible and randomly distributed... 
             for packet in packets_to_send {
                 osc_client.send(packet);
             }
