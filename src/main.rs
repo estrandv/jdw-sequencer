@@ -2,17 +2,20 @@
 
 use std::cell::RefCell;
 
+use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
+use config::REAL_TIME_MODE;
+use jdw_osc_lib::model::TaggedBundle;
 use local_messaging::{LocalQueuePayload, LocalSequencerMessage};
 use log::{info, warn};
 use master_sequencer::MasterSequencer;
 use ringbuf::traits::{Producer, Split};
 use ringbuf::HeapRb;
-use rosc::{OscMessage, OscPacket};
+use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use sequencing_daemon::SequencingDaemonState;
 use simple_logger::SimpleLogger;
 
@@ -65,9 +68,32 @@ fn main() {
         master,
         120,
         osc_sub,
-        move |packets_to_send| {
+        move |packets_to_send, tick_time| {
             if !packets_to_send.is_empty() {
                 info!("TICK! {:?}", Utc::now());
+
+                let send_packets = packets_to_send.iter().map(|pct| {
+                    if REAL_TIME_MODE {
+                        OscPacket::Bundle(OscBundle {
+                            timetag: OscTime::try_from(tick_time).unwrap(),
+                            content: vec![
+                                OscPacket::Message(OscMessage {
+                                    addr: "/bundle_info".to_string(),
+                                    args: vec![OscType::String("real_time_packet".to_string())],
+                                }),
+                                OscPacket::Message(OscMessage {
+                                    addr: "/info_msg".to_string(),
+                                    args: vec![OscType::Time(
+                                        OscTime::try_from(tick_time).unwrap(),
+                                    )],
+                                }),
+                                pct.clone(),
+                            ],
+                        })
+                    } else {
+                        pct.clone()
+                    }
+                });
 
                 // TODO: This will always be a timing bottleneck when there are many packages
                 // Ideally, you send them all in a bundle, but something will eventually have to unpack it and send it on ...
@@ -75,7 +101,7 @@ fn main() {
                 // app in itself there is a translation cost ...
                 // It is however easy to place a simple buffer right here. Might be worth trying to even out the massive drop on 0.0,
                 //  although the eventual delay for buffered notes might be a bit too noticible and randomly distributed...
-                for packet in packets_to_send {
+                for packet in send_packets {
                     if let OscPacket::Bundle(o) = packet.clone() {
                         let sys: SystemTime = o.timetag.into();
                         let datetime: DateTime<Utc> = sys.into();
