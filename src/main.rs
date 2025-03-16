@@ -70,10 +70,16 @@ fn main() {
         osc_sub,
         move |packets_to_send, tick_time| {
             if !packets_to_send.is_empty() {
-                info!("TICK! {:?}", Utc::now());
+                // TODO: tick_time is actually a DateTime<Utc>, we create this system time alongside it for easier OscTime conversion.
+                // There will always be a possible gap until this is streamlined in both ends
+                info!("TICK! {:?}", tick_time);
 
                 let send_packets = packets_to_send.iter().map(|pct| {
                     if REAL_TIME_MODE {
+                        // Note: A regular bundle would have contained a time tag by default,
+                        // but in order to provide proper context data we're sending a full tagged bundle.
+                        // TODO: Depending on how you interpret the tagged bundle, you can probably just grab the timetag anyway
+                        // and skip the info_msg (duplicate) time contents entirely.
                         OscPacket::Bundle(OscBundle {
                             timetag: OscTime::try_from(tick_time).unwrap(),
                             content: vec![
@@ -96,7 +102,7 @@ fn main() {
                 });
 
                 // TODO: This will always be a timing bottleneck when there are many packages
-                // Ideally, you send them all in a bundle, but something will eventually have to unpack it and send it on ...
+                // Ideally, you send them all in a bundle, but something will eventually have to unpack it and send it on for router subscriptions filtering to work.
                 // One might consider buffered sending for more even volumes (e.g. 5 messages per loop), but if that is another
                 // app in itself there is a translation cost ...
                 // It is however easy to place a simple buffer right here. Might be worth trying to even out the massive drop on 0.0,
