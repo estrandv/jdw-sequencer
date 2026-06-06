@@ -142,7 +142,7 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
             // TODO: This new method renders a lot of old designs obsolete (e.g. this initial writing before later reading of state)
             // TODO: Might want to limit how many messages we read at a time
             while let Some(msg) = message_sub.try_pop() {
-                print!("POP");
+                debug!("POP");
 
                 match msg {
                     LocalSequencerMessage::HardStop => {

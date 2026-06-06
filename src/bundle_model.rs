@@ -1,3 +1,4 @@
+use log::warn;
 use rosc::OscPacket;
 
 use jdw_osc_lib::model::{OscArgHandler, TaggedBundle, TimedOSCPacket};
@@ -43,7 +44,7 @@ impl BatchUpdateQueuesMessage {
                     let queue_update = UpdateQueueMessage::from_bundle(tagged_bun)?;
                     queue_updates.push(queue_update);
                 },
-                _ => println!("Found a non-bundle in the update queue"),
+                _ => warn!("Found a non-bundle in the update queue"),
             }
         }
 
@@ -91,7 +92,7 @@ impl UpdateQueueMessage {
                     let timed_message = TimedOSCPacket::from_bundle(tagged_bun)?;
                     contained_timed_messages.push(timed_message);
                 },
-                _ => println!("Found a non-bundle in the update queue"),
+                _ => warn!("Found a non-bundle in the update queue"),
             }
         }
 

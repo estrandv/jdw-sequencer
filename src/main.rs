@@ -43,9 +43,14 @@ mod sequencing_daemon;
 */
 
 fn main() {
-    // Handles all log macros, e.g. "warn!()" to print info in terminal
+    let quiet = std::env::args().any(|a| a == "-q" || a == "--quiet");
+
     SimpleLogger::new()
-        .with_level(config::LOG_LEVEL)
+        .with_level(if quiet {
+            log::LevelFilter::Error
+        } else {
+            config::LOG_LEVEL
+        })
         .init()
         .unwrap();
 
@@ -111,7 +116,7 @@ fn main() {
                     if let OscPacket::Bundle(o) = packet.clone() {
                         let sys: SystemTime = o.timetag.into();
                         let datetime: DateTime<Utc> = sys.into();
-                        println!("MY MAN SENDTIME {}", datetime.format("%d/%m/%Y %T"));
+                        info!("MY MAN SENDTIME {}", datetime.format("%d/%m/%Y %T"));
                     }
 
                     osc_client.send(packet);
