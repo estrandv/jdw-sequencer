@@ -188,7 +188,7 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                 "Failed to resolve loop time as nanoseconds - is it too large to fit an i64?",
             ) as u64; // Make it crash if unwrap fails - there is no good alternative to the real number, if subtracting from tick time!
 
-            let tick_time_ns = crate::config::TICK_TIME_US * 1000;
+            let tick_time_ns = crate::config::Config::get().tick_time_us * 1000;
 
             if time_taken_ns > tick_time_ns {
                 warn!(

@@ -1,0 +1,14 @@
+# jdw-sequencer configuration
+application_ip = "127.0.0.1"
+application_in_port = 14441
+application_out_port = 13339
+application_out_socket_port = 14444
+tick_time_us = 5000
+sequencer_start_mode = 1
+sequencer_reset_mode = 1
+real_time_mode = true
+midi_sync = false
+ringbuf_capacity = 100
+default_bpm = 120
+buffer_size = 333072
+log_level = "info"

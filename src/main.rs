@@ -8,7 +8,6 @@ use std::thread;
 use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
-use config::REAL_TIME_MODE;
 use jdw_osc_lib::model::TaggedBundle;
 use local_messaging::{LocalQueuePayload, LocalSequencerMessage};
 use log::{info, warn};
@@ -43,19 +42,32 @@ mod sequencing_daemon;
 */
 
 fn main() {
-    let quiet = std::env::args().any(|a| a == "-q" || a == "--quiet");
+    let mut args = std::env::args().skip(1).peekable();
+    let mut config_path = "config.toml".to_string();
+    while let Some(arg) = args.next() {
+        if arg == "-q" || arg == "--quiet" {
+            std::env::set_var("JDW_SEQUENCER_QUIET", "1");
+        } else {
+            config_path = arg;
+            break;
+        }
+    }
+    config::Config::init(&config_path);
+
+    let cfg = config::Config::get();
+    let quiet = std::env::var("JDW_SEQUENCER_QUIET").is_ok();
 
     SimpleLogger::new()
         .with_level(if quiet {
             log::LevelFilter::Error
         } else {
-            config::LOG_LEVEL
+            cfg.log_level
         })
         .init()
         .unwrap();
 
     // NOTE: Expecting quite a few messages might arrive at the same time, account for this in sequencer loop
-    let osc_pipe = HeapRb::<LocalSequencerMessage<OscPacket>>::new(100);
+    let osc_pipe = HeapRb::<LocalSequencerMessage<OscPacket>>::new(cfg.ringbuf_capacity);
     let (mut osc_pub, mut osc_sub) = osc_pipe.split();
 
     // Note: Bit of a mess, but speed is not important for publishing here
@@ -63,15 +75,22 @@ fn main() {
 
     let osc_client = OSCClient::new();
 
-    let master = MasterSequencer::new(
-        master_sequencer::SequencerStartMode::WithLongestSequence,
-        master_sequencer::SequencerResetMode::Individual,
-    );
+    let start_mode = match cfg.sequencer_start_mode {
+        0 => master_sequencer::SequencerStartMode::WithNearestSequence,
+        2 => master_sequencer::SequencerStartMode::Immediate,
+        _ => master_sequencer::SequencerStartMode::WithLongestSequence,
+    };
+    let reset_mode = match cfg.sequencer_reset_mode {
+        0 => master_sequencer::SequencerResetMode::AllAfterLongestSequenceFinished,
+        _ => master_sequencer::SequencerResetMode::Individual,
+    };
+
+    let master = MasterSequencer::new(start_mode, reset_mode);
 
     // Start sequencer loop in separate thread and handle ticked packets
     sequencing_daemon::start_live_loop::<OscPacket, _>(
         master,
-        120,
+        cfg.default_bpm,
         osc_sub,
         move |packets_to_send, tick_time| {
             if !packets_to_send.is_empty() {
@@ -80,7 +99,7 @@ fn main() {
                 info!("TICK! {:?}", tick_time);
 
                 let send_packets = packets_to_send.iter().map(|pct| {
-                    if REAL_TIME_MODE {
+                    if cfg.real_time_mode {
                         // Note: A regular bundle would have contained a time tag by default,
                         // but in order to provide proper context data we're sending a full tagged bundle.
                         // TODO: Depending on how you interpret the tagged bundle, you can probably just grab the timetag anyway
@@ -125,7 +144,7 @@ fn main() {
         },
     );
 
-    let addr = config::get_addr(config::APPLICATION_IN_PORT);
+    let addr = config::get_addr(cfg.application_in_port);
     info!("STARTING OSC READER");
 
     OSCStack::init(addr)

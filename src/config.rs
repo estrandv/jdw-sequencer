@@ -1,40 +1,118 @@
+use std::path::Path;
+use std::sync::OnceLock;
+
 use log::LevelFilter;
+use serde::Deserialize;
 
-/*
-   Central place for application configuration until we decide on a non-hardcode method
-*/
+static CONFIG: OnceLock<Config> = OnceLock::new();
 
-pub const LOG_LEVEL: LevelFilter = LevelFilter::Info;
-pub const APPLICATION_IP: &str = "127.0.0.1";
+#[derive(Deserialize)]
+pub struct Config {
+    #[serde(deserialize_with = "deserialize_log_level", default = "default_log_level_str")]
+    pub log_level: LevelFilter,
+    #[serde(default = "default_application_ip")]
+    pub application_ip: String,
+    #[serde(default = "default_application_in_port")]
+    pub application_in_port: i32,
+    #[serde(default = "default_application_out_port")]
+    pub application_out_port: i32,
+    #[serde(default = "default_application_out_socket_port")]
+    pub application_out_socket_port: i32,
+    #[serde(default = "default_tick_time_us")]
+    pub tick_time_us: u64,
+    #[serde(default = "default_sequencer_start_mode")]
+    pub sequencer_start_mode: i32,
+    #[serde(default = "default_sequencer_reset_mode")]
+    pub sequencer_reset_mode: i32,
+    #[serde(default = "default_real_time_mode")]
+    pub real_time_mode: bool,
+    #[serde(default = "default_midi_sync")]
+    pub midi_sync: bool,
+    #[serde(default = "default_ringbuf_capacity")]
+    pub ringbuf_capacity: usize,
+    #[serde(default = "default_default_bpm")]
+    pub default_bpm: i32,
+    #[serde(default = "default_buffer_size")]
+    pub buffer_size: usize,
+}
 
-pub const APPLICATION_IN_PORT: i32 = 14441; // Messages sent to this port will be read by this application
-                                            //pub const APPLICATION_OUT_PORT: i32 = 14443; // This application sends its outgoing messages to this port
-                                            //pub const APPLICATION_OUT_PORT: i32 = 13331; // Hardwire to jdw-sc
-pub const APPLICATION_OUT_PORT: i32 = 13339; // jdw-osc-router
-                                             //pub const APPLICATION_OUT_PORT: i32 = 12367; // Hardwire to jdw-sampler
+fn default_log_level_str() -> LevelFilter {
+    parse_log_level("info")
+}
 
-pub const APPLICATION_OUT_SOCKET_PORT: i32 = 14444; // Messages send from this application will have this port listed as "from"
+fn default_application_ip() -> String { "127.0.0.1".to_string() }
+fn default_application_in_port() -> i32 { 14441 }
+fn default_application_out_port() -> i32 { 13339 }
+fn default_application_out_socket_port() -> i32 { 14444 }
+fn default_tick_time_us() -> u64 { 5000 }
+fn default_sequencer_start_mode() -> i32 { 1 }
+fn default_sequencer_reset_mode() -> i32 { 1 }
+fn default_real_time_mode() -> bool { true }
+fn default_midi_sync() -> bool { false }
+fn default_ringbuf_capacity() -> usize { 100 }
+fn default_default_bpm() -> i32 { 120 }
+fn default_buffer_size() -> usize { 333072 }
 
-// "US" = Microseconds
-pub const TICK_TIME_US: u64 = 5000; // div1000 for ms
+pub fn parse_log_level(s: &str) -> LevelFilter {
+    match s.to_lowercase().as_str() {
+        "off" | "disable" => LevelFilter::Off,
+        "error" => LevelFilter::Error,
+        "warn" | "warning" => LevelFilter::Warn,
+        "info" => LevelFilter::Info,
+        "debug" => LevelFilter::Debug,
+        "trace" => LevelFilter::Trace,
+        _ => LevelFilter::Info,
+    }
+}
 
-// TODO: Enum / own struct for these?
-pub const SEQ_START_MODE_NEAREST: i32 = 0;
-pub const SEQ_START_MODE_LONGEST: i32 = 1;
-pub const SEQ_START_MODE_IMMEDIATE: i32 = 2;
+fn deserialize_log_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<LevelFilter, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(parse_log_level(&s))
+}
 
-pub const SEQUENCER_START_MODE: i32 = SEQ_START_MODE_LONGEST;
+impl Config {
+    pub fn init(path: &str) {
+        let cfg = match Path::new(path).try_exists() {
+            Ok(true) => {
+                let content = std::fs::read_to_string(path).unwrap_or_default();
+                toml::from_str(&content).unwrap_or_else(|e| {
+                    eprintln!("Warning: Failed to parse config file '{}': {}. Using defaults.", path, e);
+                    Config::default()
+                })
+            }
+            _ => {
+                eprintln!("Warning: Config file '{}' not found. Using defaults.", path);
+                Config::default()
+            }
+        };
+        CONFIG.set(cfg).ok();
+    }
 
-pub const SEQ_RESET_MODE_TOGETHER: i32 = 0;
-pub const SEQ_RESET_MODE_INDIVIDUAL: i32 = 1;
+    pub fn get() -> &'static Config {
+        CONFIG.get().expect("Config not initialized — call config::init() first")
+    }
+}
 
-pub const SEQUENER_RESET_MODE: i32 = SEQ_RESET_MODE_INDIVIDUAL;
-
-// Wrap sent packets in a RealTimeBundle, containing the tick time and the packet itself
-pub const REAL_TIME_MODE: bool = true;
-
-pub const MIDI_SYNC: bool = false;
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            log_level: default_log_level_str(),
+            application_ip: default_application_ip(),
+            application_in_port: default_application_in_port(),
+            application_out_port: default_application_out_port(),
+            application_out_socket_port: default_application_out_socket_port(),
+            tick_time_us: default_tick_time_us(),
+            sequencer_start_mode: default_sequencer_start_mode(),
+            sequencer_reset_mode: default_sequencer_reset_mode(),
+            real_time_mode: default_real_time_mode(),
+            midi_sync: default_midi_sync(),
+            ringbuf_capacity: default_ringbuf_capacity(),
+            default_bpm: default_default_bpm(),
+            buffer_size: default_buffer_size(),
+        }
+    }
+}
 
 pub fn get_addr(port: i32) -> String {
-    format!("{}:{}", APPLICATION_IP, port)
+    format!("{}:{}", Config::get().application_ip, port)
 }
