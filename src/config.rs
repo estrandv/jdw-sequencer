@@ -3,113 +3,150 @@ use std::sync::OnceLock;
 
 use log::LevelFilter;
 use serde::Deserialize;
+use toml::Value as TomlValue;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
+static APP_NAME: &str = "sequencer";
 
 #[derive(Deserialize)]
 pub struct Config {
-    #[serde(deserialize_with = "deserialize_log_level", default = "default_log_level_str")]
-    pub log_level: LevelFilter,
-    #[serde(default = "default_application_ip")]
+    pub log_level: String,
     pub application_ip: String,
-    #[serde(default = "default_application_in_port")]
     pub application_in_port: i32,
-    #[serde(default = "default_application_out_port")]
     pub application_out_port: i32,
-    #[serde(default = "default_application_out_socket_port")]
     pub application_out_socket_port: i32,
-    #[serde(default = "default_tick_time_us")]
     pub tick_time_us: u64,
-    #[serde(default = "default_sequencer_start_mode")]
     pub sequencer_start_mode: i32,
-    #[serde(default = "default_sequencer_reset_mode")]
     pub sequencer_reset_mode: i32,
-    #[serde(default = "default_real_time_mode")]
     pub real_time_mode: bool,
-    #[serde(default = "default_midi_sync")]
     pub midi_sync: bool,
-    #[serde(default = "default_ringbuf_capacity")]
     pub ringbuf_capacity: usize,
-    #[serde(default = "default_default_bpm")]
     pub default_bpm: i32,
-    #[serde(default = "default_buffer_size")]
     pub buffer_size: usize,
-}
-
-fn default_log_level_str() -> LevelFilter {
-    parse_log_level("info")
-}
-
-fn default_application_ip() -> String { "127.0.0.1".to_string() }
-fn default_application_in_port() -> i32 { 14441 }
-fn default_application_out_port() -> i32 { 13339 }
-fn default_application_out_socket_port() -> i32 { 14444 }
-fn default_tick_time_us() -> u64 { 5000 }
-fn default_sequencer_start_mode() -> i32 { 1 }
-fn default_sequencer_reset_mode() -> i32 { 1 }
-fn default_real_time_mode() -> bool { true }
-fn default_midi_sync() -> bool { false }
-fn default_ringbuf_capacity() -> usize { 100 }
-fn default_default_bpm() -> i32 { 120 }
-fn default_buffer_size() -> usize { 333072 }
-
-pub fn parse_log_level(s: &str) -> LevelFilter {
-    match s.to_lowercase().as_str() {
-        "off" | "disable" => LevelFilter::Off,
-        "error" => LevelFilter::Error,
-        "warn" | "warning" => LevelFilter::Warn,
-        "info" => LevelFilter::Info,
-        "debug" => LevelFilter::Debug,
-        "trace" => LevelFilter::Trace,
-        _ => LevelFilter::Info,
-    }
-}
-
-fn deserialize_log_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<LevelFilter, D::Error> {
-    let s = String::deserialize(d)?;
-    Ok(parse_log_level(&s))
-}
-
-impl Config {
-    pub fn init(path: &str) {
-        let cfg = match Path::new(path).try_exists() {
-            Ok(true) => {
-                let content = std::fs::read_to_string(path).unwrap_or_default();
-                toml::from_str(&content).unwrap_or_else(|e| {
-                    eprintln!("Warning: Failed to parse config file '{}': {}. Using defaults.", path, e);
-                    Config::default()
-                })
-            }
-            _ => {
-                eprintln!("Warning: Config file '{}' not found. Using defaults.", path);
-                Config::default()
-            }
-        };
-        CONFIG.set(cfg).ok();
-    }
-
-    pub fn get() -> &'static Config {
-        CONFIG.get().expect("Config not initialized — call config::init() first")
-    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            log_level: default_log_level_str(),
-            application_ip: default_application_ip(),
-            application_in_port: default_application_in_port(),
-            application_out_port: default_application_out_port(),
-            application_out_socket_port: default_application_out_socket_port(),
-            tick_time_us: default_tick_time_us(),
-            sequencer_start_mode: default_sequencer_start_mode(),
-            sequencer_reset_mode: default_sequencer_reset_mode(),
-            real_time_mode: default_real_time_mode(),
-            midi_sync: default_midi_sync(),
-            ringbuf_capacity: default_ringbuf_capacity(),
-            default_bpm: default_default_bpm(),
-            buffer_size: default_buffer_size(),
+            log_level: "info".to_string(),
+            application_ip: "127.0.0.1".to_string(),
+            application_in_port: 14441,
+            application_out_port: 13339,
+            application_out_socket_port: 14444,
+            tick_time_us: 5000,
+            sequencer_start_mode: 1,
+            sequencer_reset_mode: 1,
+            real_time_mode: true,
+            midi_sync: false,
+            ringbuf_capacity: 100,
+            default_bpm: 120,
+            buffer_size: 333072,
         }
+    }
+}
+
+impl Config {
+    pub fn get() -> &'static Config {
+        CONFIG.get().expect("Config not initialized — call config::init() first")
+    }
+
+    pub fn log_level_filter(&self) -> LevelFilter {
+        match self.log_level.to_lowercase().as_str() {
+            "off" | "disable" => LevelFilter::Off,
+            "error" => LevelFilter::Error,
+            "warn" | "warning" => LevelFilter::Warn,
+            "info" => LevelFilter::Info,
+            "debug" => LevelFilter::Debug,
+            "trace" => LevelFilter::Trace,
+            _ => LevelFilter::Info,
+        }
+    }
+}
+
+fn central_config_path() -> Option<String> {
+    if let Ok(path) = std::env::var("JDW_CONFIG") {
+        if Path::new(&path).exists() {
+            return Some(path);
+        }
+    }
+    let home = std::env::var("HOME").ok()?;
+    let xdg = Path::new(&home).join(".config").join("jdw.toml");
+    if xdg.exists() {
+        return Some(xdg.to_string_lossy().to_string());
+    }
+    None
+}
+
+fn load_central_section() -> Option<TomlValue> {
+    let path = central_config_path()?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    let root: TomlValue = contents.parse().ok()?;
+    root.get(APP_NAME).cloned()
+}
+
+fn merge_str(base: &mut String, overlay: &TomlValue, key: &str) {
+    if let Some(v) = overlay.get(key).and_then(|v| v.as_str()) {
+        *base = v.to_string();
+    }
+}
+
+fn merge_i32(base: &mut i32, overlay: &TomlValue, key: &str) {
+    if let Some(v) = overlay.get(key).and_then(|v| v.as_integer()) {
+        *base = v as i32;
+    }
+}
+
+fn merge_u64(base: &mut u64, overlay: &TomlValue, key: &str) {
+    if let Some(v) = overlay.get(key).and_then(|v| v.as_integer()) {
+        *base = v as u64;
+    }
+}
+
+fn merge_usize(base: &mut usize, overlay: &TomlValue, key: &str) {
+    if let Some(v) = overlay.get(key).and_then(|v| v.as_integer()) {
+        *base = v as usize;
+    }
+}
+
+fn merge_bool(base: &mut bool, overlay: &TomlValue, key: &str) {
+    if let Some(v) = overlay.get(key).and_then(|v| v.as_bool()) {
+        *base = v;
+    }
+}
+
+fn merge_config(base: &mut Config, overlay: &TomlValue) {
+    merge_str(&mut base.log_level, overlay, "log_level");
+    merge_str(&mut base.application_ip, overlay, "application_ip");
+    merge_i32(&mut base.application_in_port, overlay, "application_in_port");
+    merge_i32(&mut base.application_out_port, overlay, "application_out_port");
+    merge_i32(&mut base.application_out_socket_port, overlay, "application_out_socket_port");
+    merge_u64(&mut base.tick_time_us, overlay, "tick_time_us");
+    merge_i32(&mut base.sequencer_start_mode, overlay, "sequencer_start_mode");
+    merge_i32(&mut base.sequencer_reset_mode, overlay, "sequencer_reset_mode");
+    merge_bool(&mut base.real_time_mode, overlay, "real_time_mode");
+    merge_bool(&mut base.midi_sync, overlay, "midi_sync");
+    merge_usize(&mut base.ringbuf_capacity, overlay, "ringbuf_capacity");
+    merge_i32(&mut base.default_bpm, overlay, "default_bpm");
+    merge_usize(&mut base.buffer_size, overlay, "buffer_size");
+}
+
+impl Config {
+    pub fn init(config_path: &str) {
+        let mut cfg = Config::default();
+
+        if let Some(central) = load_central_section() {
+            merge_config(&mut cfg, &central);
+        }
+
+        if let Ok(contents) = std::fs::read_to_string(config_path) {
+            if let Ok(local) = toml::from_str::<TomlValue>(&contents) {
+                merge_config(&mut cfg, &local);
+            }
+        } else {
+            eprintln!("Warning: Config file '{}' not found. Using defaults.", config_path);
+        }
+
+        CONFIG.set(cfg).ok();
     }
 }
 

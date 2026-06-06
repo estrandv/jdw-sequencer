@@ -61,7 +61,7 @@ fn main() {
         .with_level(if quiet {
             log::LevelFilter::Error
         } else {
-            cfg.log_level
+            cfg.log_level_filter()
         })
         .init()
         .unwrap();
