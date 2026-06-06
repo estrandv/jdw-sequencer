@@ -80,7 +80,7 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
             let this_loop_time = Utc::now();
             let tick_time_sys = SystemTime::now();
             let elapsed_time = match last_loop_time {
-                Some(t) => this_loop_time.time() - t.time(),
+                Some(t) => this_loop_time - t,
                 None => Duration::zero(),
             };
             last_loop_time = Some(this_loop_time.clone());
@@ -183,7 +183,7 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
             /*
                 Calculate time taken to execute this loop and log accordingly
             */
-            let dur = Utc::now().time() - this_loop_time.time();
+            let dur = Utc::now() - this_loop_time;
             let time_taken_ns = dur.num_nanoseconds().expect(
                 "Failed to resolve loop time as nanoseconds - is it too large to fit an i64?",
             ) as u64; // Make it crash if unwrap fails - there is no good alternative to the real number, if subtracting from tick time!
