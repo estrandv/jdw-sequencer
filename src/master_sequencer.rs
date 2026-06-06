@@ -9,7 +9,7 @@ use std::{collections::HashMap, hash::Hash, str::FromStr};
 
 use bigdecimal::BigDecimal;
 use bigdecimal::num_traits::one;
-use log::info;
+use log::debug;
 
 use crate::sequencer::{Sequencer, SequencerEntry};
 
@@ -85,6 +85,8 @@ impl<T: Clone> MasterSequencer<T> {
 
     // Set all sequencers to wipe after they finish 
     pub fn end_after_finish(&mut self) {
+        let names: Vec<&String> = self.active_sequencers.iter().map(|(a, _)| a).collect();
+        debug!("[sequencer] EndAfterFinish on {} active sequencers: {:?}", names.len(), names);
         self.active_sequencers.iter_mut().for_each(|entry| entry.1.finish_action = SequencerFinishAction::Wipe);
     }
 
@@ -98,6 +100,11 @@ impl<T: Clone> MasterSequencer<T> {
         */
         match self.sequencer_reset_mode {
             SequencerResetMode::AllAfterLongestSequenceFinished => {
+                for (alias, data) in &self.active_sequencers {
+                    if data.sequencer.is_finished() {
+                        debug!("[sequencer] {} finished (action={:?}, beat={}, end={})", alias, data.finish_action, data.sequencer.current_beat, data.sequencer.end_beat);
+                    }
+                }
                 if self.longest_sequence_finished() {
 
                     // remove one shot finished sequencers
@@ -110,8 +117,23 @@ impl<T: Clone> MasterSequencer<T> {
                 }
             },
             SequencerResetMode::Individual => {
+                let wiping: Vec<String> = self.active_sequencers.iter()
+                    .filter(|(_, f2)| f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe)
+                    .map(|(a, _)| a.clone())
+                    .collect();
+                if !wiping.is_empty() {
+                    debug!("[sequencer] wiping finished one-shot sequencers: {:?}", wiping);
+                }
 
                 self.active_sequencers.retain(|_, f2| !(f2.sequencer.is_finished() && f2.finish_action == SequencerFinishAction::Wipe) );
+
+                let resetting: Vec<String> = self.active_sequencers.iter()
+                    .filter(|(_, seq)| seq.sequencer.is_finished())
+                    .map(|(a, seq)| format!("{} (beat={}, end={})", a, seq.sequencer.current_beat, seq.sequencer.end_beat))
+                    .collect();
+                if !resetting.is_empty() {
+                    debug!("[sequencer] resetting finished looping sequencers: {:?}", resetting);
+                }
 
                 self.active_sequencers.iter_mut()
                     .filter(|seq| seq.1.sequencer.is_finished())
@@ -134,6 +156,8 @@ impl<T: Clone> MasterSequencer<T> {
         );
 
         let finish_action = if one_shot {SequencerFinishAction::Wipe} else {SequencerFinishAction::Reset};
+        let location = if existing.is_some() { "existing" } else { "inactive" };
+        debug!("[sequencer] queue {} -> {} ({} entries, end_beat={}, one_shot={})", sequencer_alias, location, entries.len(), end_beat, one_shot);
 
         if existing.is_some() {
             existing.map(|seq| {
@@ -165,12 +189,16 @@ impl<T: Clone> MasterSequencer<T> {
                 SequencerStartMode::Immediate => BigDecimal::from_str("0.0").unwrap(),
             };
 
+            debug!("[sequencer] start_check: {} inactive, start_mode_ok={}, overshoot={}", self.inactive_sequencers.len(), start_mode_ok, start_overshoot);
+
             if start_mode_ok {
+                let starting: Vec<String> = self.inactive_sequencers.iter().map(|(a, _)| a.clone()).collect();
+                debug!("[sequencer] starting inactive sequencers: {:?}", starting);
                 for entry in self.inactive_sequencers.iter() {
                     let mut starting_sequencer = entry.1.clone();
                     // Avoid other reset-check rules for starting sequencers
                     // Crap - I think offset is important here
-                    info!("TODO: Experimental immediate-start-reset triggered - possible source of overshoot bug");
+                    debug!("TODO: Experimental immediate-start-reset triggered - possible source of overshoot bug");
                     starting_sequencer.sequencer.reset(start_overshoot.clone());
                     self.active_sequencers.insert(entry.0.to_string(), starting_sequencer);
                 }
@@ -184,6 +212,9 @@ impl<T: Clone> MasterSequencer<T> {
         self.active_sequencers.iter().filter(|seq| seq.1.sequencer.is_finished()).count()
     }
 
+    // TODO: capacity() is almost certainly wrong — it returns the HashMap's allocation size,
+    // not the number of elements. Should be .len(). Currently unfixed because WithLongestSequence
+    // mode short-circuits via longest_sequence_finished(), masking the issue.
     fn count_started(&self) -> usize {
         self.active_sequencers.capacity()
     }

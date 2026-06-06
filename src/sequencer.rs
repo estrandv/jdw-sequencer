@@ -1,6 +1,6 @@
 use std::str::FromStr;
 use bigdecimal::{BigDecimal, Zero};
-use log::{debug, info};
+use log::debug;
 
 
 /*
@@ -54,6 +54,7 @@ impl<T: Clone> Sequencer<T> {
     // Overshoot is the amount of beats you've already started counting on the new sequence, e.g. by having the last tick amount
     //  overshoot the end_beat by n amount
     pub fn reset(&mut self, overshoot: BigDecimal) {
+        debug!("[sequencer] reset: overshoot={}, active_entries={}, end_beat={}, queue_end_beat={}", overshoot, self.queued_sequence.len(), self.end_beat, self.queue_end_beat);
         self.current_beat = overshoot;
         self.processed_beats = None; 
         self.active_sequence = self.queued_sequence.clone();
@@ -79,7 +80,7 @@ impl<T: Clone> Sequencer<T> {
                 .collect();
 
             if !candidates.is_empty() {
-                info!("CANDIDATES ON BEAT: {}", self.current_beat.clone());
+                debug!("[sequencer] tick: {} candidates at beat {} (processed={:?})", candidates.len(), self.current_beat, self.processed_beats);
             }
 
             // Note that entries up until this beat have been tick-returned and should not be returned again on later current_beats
@@ -95,7 +96,11 @@ impl<T: Clone> Sequencer<T> {
 
     pub fn is_finished(&self) -> bool {
         let cursor = &self.processed_beats.clone().unwrap_or(self.current_beat.clone());
-        return cursor >= &self.end_beat; 
+        let finished = cursor >= &self.end_beat;
+        if finished {
+            debug!("[sequencer] is_finished: true (cursor={}, end_beat={}, processed_beats={:?}, current_beat={})", cursor, self.end_beat, self.processed_beats, self.current_beat);
+        }
+        return finished; 
     }
 
     // Use to check by how much tick() has pushed current_beat past end_beat, if at all. Only relevant if is_finished(). 
@@ -107,6 +112,7 @@ impl<T: Clone> Sequencer<T> {
         NOTE: This presumes that new_queue already has its entries arranged on a timeline, with each time signature representing their start time. 
     */
     pub fn queue(&mut self, new_queue: Vec<SequencerEntry<T>>, end_beat: BigDecimal) {
+        debug!("[sequencer] queue: {} entries, end_beat={}", new_queue.len(), end_beat);
         self.queue_end_beat = end_beat.clone();
         self.queued_sequence = new_queue.clone();
     }
