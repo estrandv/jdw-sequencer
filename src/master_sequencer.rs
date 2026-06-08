@@ -212,11 +212,8 @@ impl<T: Clone> MasterSequencer<T> {
         self.active_sequencers.iter().filter(|seq| seq.1.sequencer.is_finished()).count()
     }
 
-    // TODO: capacity() is almost certainly wrong — it returns the HashMap's allocation size,
-    // not the number of elements. Should be .len(). Currently unfixed because WithLongestSequence
-    // mode short-circuits via longest_sequence_finished(), masking the issue.
     fn count_started(&self) -> usize {
-        self.active_sequencers.capacity()
+        self.active_sequencers.len()
     }
 
     fn longest_sequence_finished(&self) -> bool {
