@@ -128,7 +128,8 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                 } else {
                     master_sequencer.reset_check();
                 }
-                let collected = master_sequencer.tick(elapsed_beats).clone(); // TODO: Does it work without clone, or does that make lock eternal?
+                let collected = master_sequencer.tick(elapsed_beats);
+                // clone() was unnecessary — tick() returns owned data, lock is released
 
                 entry_operations(collected, tick_time_sys);
             }
