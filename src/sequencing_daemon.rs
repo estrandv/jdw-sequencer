@@ -1,7 +1,6 @@
 use std::{cell::RefCell, str::FromStr, sync::Arc, thread, time::SystemTime};
 
 use bigdecimal::BigDecimal;
-use chrono::{DateTime, Duration, Utc};
 use jdw_osc_lib::model::TimedOSCPacket;
 use log::{debug, info, warn};
 use ringbuf::{storage::Heap, traits::Consumer, wrap::caching::Caching, SharedRb};
@@ -69,27 +68,20 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
     thread::spawn(move || {
         let state = SequencingDaemonState::new(bpm_param);
 
-        let mut last_loop_time: Option<DateTime<Utc>> = None;
+        let mut last_loop_time: Option<SystemTime> = None;
 
         let sleeper = spin_sleep::SpinSleeper::new(100);
 
         loop {
-            /*
-                Calculate and log loop time taken
-            */
-            let this_loop_time = Utc::now();
             let tick_time_sys = SystemTime::now();
-            let elapsed_time = match last_loop_time {
-                Some(t) => this_loop_time - t,
-                None => Duration::zero(),
+            let elapsed_ns: u64 = match last_loop_time {
+                Some(t) => tick_time_sys
+                    .duration_since(t)
+                    .unwrap_or_default()
+                    .as_nanos() as u64,
+                None => 0,
             };
-            last_loop_time = Some(this_loop_time.clone());
-
-            //info!("New master loop began - time taken since last loop (microsec): {:?}", elapsed_time.num_microseconds());
-
-            /*
-                Read input previously written to state via OSC
-            */
+            last_loop_time = Some(tick_time_sys);
 
             let current_bpm = state.bpm.clone();
             let reset_requested = state.reset.clone().into_inner();
@@ -100,27 +92,11 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
             }
 
             let elapsed_beats =
-                midi_utils::duration_to_beats(elapsed_time, current_bpm.clone().into_inner());
+                midi_utils::duration_to_beats(elapsed_ns, current_bpm.clone().into_inner());
 
-            //info!("Elapsed beats: {}", elapsed_beats);
-
-            /*
-                TODO: Stop request
-                - A stop means "Reset all sequencers and treat them as not started until a new start is received"
-                - Then, of course, there is also the FULL STOP, where all sequencers are simply eliminated
-                    -> This is what we do below, there is no regular stop currently!
-
-                TODO TODO: Do we really need a state?
-                    - I think some initial idea was that e.g. the wipe or force_reset should happen at a particular place
-                    - This can probably be handled with closures if you know how to write them, but I'm also kinda sure
-                        that most things can just happen immediately
-            */
             if hard_stop_requested {
                 master_sequencer.force_wipe();
             } else {
-                /*
-                    Tick the clock, collect Ts on time.
-                */
                 master_sequencer.start_check();
 
                 if reset_requested {
@@ -129,19 +105,10 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                     master_sequencer.reset_check();
                 }
                 let collected = master_sequencer.tick(elapsed_beats);
-                // clone() was unnecessary — tick() returns owned data, lock is released
 
                 entry_operations(collected, tick_time_sys);
             }
 
-            /*
-
-                Incoming state updates
-
-            */
-
-            // TODO: This new method renders a lot of old designs obsolete (e.g. this initial writing before later reading of state)
-            // TODO: Might want to limit how many messages we read at a time
             while let Some(msg) = message_sub.try_pop() {
                 debug!("POP");
 
@@ -167,7 +134,6 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                             payload.one_shot,
                         );
                     }
-                    // TODO: See handling of osc message, this isn't doing anything atm
                     LocalSequencerMessage::BatchQueue(payloads) => {
                         for payload in payloads {
                             master_sequencer.queue(
@@ -181,13 +147,11 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                 }
             }
 
-            /*
-                Calculate time taken to execute this loop and log accordingly
-            */
-            let dur = Utc::now() - this_loop_time;
-            let time_taken_ns = dur.num_nanoseconds().expect(
-                "Failed to resolve loop time as nanoseconds - is it too large to fit an i64?",
-            ) as u64; // Make it crash if unwrap fails - there is no good alternative to the real number, if subtracting from tick time!
+            let now = SystemTime::now();
+            let time_taken_ns = now
+                .duration_since(tick_time_sys)
+                .unwrap_or_default()
+                .as_nanos() as u64;
 
             let tick_time_ns = crate::config::Config::get().tick_time_us * 1000;
 
@@ -197,25 +161,7 @@ pub fn start_live_loop<T: 'static + Clone + Send, F>(
                     time_taken_ns
                 );
             }
-            /*
-                Sleep until next loop tick
-            */
-            debug!("End loop: {}", this_loop_time);
-
-            /*
-               TODO.
-               Running some tests here.
-               Constant tick time appears to be more stable than the diffcheck, even though the
-                   diffcheck makes intuitive sense.
-               UPDATE: Constant tick time is -not- more stable when accounting for total drift, only appears that way for individual drift.
-               UPDATE: Began using NANOS instead of micros, which gave me (in combination with dynamic tick time) at least one example
-                   of long time (>6min) stable drift.
-                   - Nanos for elapsed beats calculation is perfect
-                   - Nanos for relative tick time (instead of previous micros) did not seem to improve things much if at all
-                       (but I don't see how it could be worse!).
-            */
-
-            //sleeper.sleep(std::time::Duration::from_micros(crate::config::TICK_TIME_US));
+            debug!("End loop");
             let time_left_until_tick = if time_taken_ns < tick_time_ns {
                 tick_time_ns - time_taken_ns
             } else {
